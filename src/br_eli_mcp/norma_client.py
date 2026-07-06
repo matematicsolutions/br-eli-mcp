@@ -1,9 +1,13 @@
-"""Async httpx client for the Camara dos Deputados open-data API (dadosabertos.camara.leg.br).
+"""Async httpx client for the Congresso Nacional Dados Abertos Legislativos API
+(legis.senado.leg.br/dadosabertos) - the real, live, keyless resolver for
+Brazilian Normas Juridicas (LexML URN Lex).
 
-Keyless, JSON, low legal risk (open data, attribution required - see SOURCES
-audited from Mcp-Brasil/mcp-brasil SOURCES.md). This is the legislative
-*process* (proposicoes/bills), not a consolidated-law text database - see
-citations.py for why we do not fabricate a LexML URN Lex here.
+DISCOVERY.md (2026-07-06 v0.1.0) tested the wrong host - www.lexml.gov.br,
+which 404s on every candidate SRU/OAI-PMH path. The actual live service sits
+on the Senado Federal's own API gateway, documented via OpenAPI 3.1 at
+https://legis.senado.leg.br/dadosabertos/v3/api-docs, "acesso publico, sem
+necessidade de autenticacao" - no key, no PISTE-style registration. Rate
+limit: 10 req/s (HTTP 429 above that), enforced upstream, not by us.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ import httpx
 
 from .cache import HttpCache
 
-DEFAULT_BASE_URL = "https://dadosabertos.camara.leg.br/api/v2"
+DEFAULT_BASE_URL = "https://legis.senado.leg.br/dadosabertos"
 DEFAULT_TIMEOUT = httpx.Timeout(40.0, connect=10.0)
 USER_AGENT = "br-eli-mcp/0.2.0 (+https://github.com/matematicsolutions/br-eli-mcp)"
 
@@ -21,8 +25,11 @@ _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3
 
 
-class CamaraClient:
-    """Async client. Use as ``async with CamaraClient() as c: ...``."""
+class NormaClient:
+    """Async client for /legislacao/urn (Norma Juridica by URN Lex).
+
+    Use as ``async with NormaClient() as c: ...``.
+    """
 
     def __init__(
         self,
@@ -37,7 +44,7 @@ class CamaraClient:
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
 
-    async def __aenter__(self) -> CamaraClient:
+    async def __aenter__(self) -> NormaClient:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
@@ -49,7 +56,7 @@ class CamaraClient:
 
     async def _get_json(self, path: str, params: dict[str, str], *, category: str) -> dict:
         url = f"{self.base_url}{path}"
-        cache_key = url + "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        cache_key = "norma:" + url + "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
         cached = self._cache.get(cache_key)
         if cached is not None and isinstance(cached, dict):
             return cached
@@ -73,22 +80,14 @@ class CamaraClient:
         assert last_exc is not None
         raise last_exc
 
-    async def search_proposicoes(
-        self, sigla_tipo: str, ano: int, itens: int = 20
-    ) -> list[dict]:
-        data = await self._get_json(
-            "/proposicoes",
-            {
-                "siglaTipo": sigla_tipo,
-                "ano": str(ano),
-                "itens": str(itens),
-                "ordem": "DESC",
-                "ordenarPor": "id",
-            },
-            category="search",
-        )
-        return data.get("dados", [])
+    async def get_norma_by_urn(self, urn: str) -> dict:
+        """Fetch one Norma Juridica by its URN Lex.
 
-    async def get_proposicao(self, proposicao_id: int) -> dict:
-        data = await self._get_json(f"/proposicoes/{proposicao_id}", {}, category="act")
-        return data.get("dados", {})
+        Example: ``urn:lex:br:federal:lei:2002-01-10;10406`` (Codigo Civil).
+        """
+        data = await self._get_json("/legislacao/urn", {"urn": urn}, category="act")
+        detalhe = data.get("DetalheDocumento", data)
+        documentos = (detalhe.get("documentos") or {}).get("documento") or []
+        if isinstance(documentos, dict):
+            documentos = [documentos]
+        return documentos[0] if documentos else {}

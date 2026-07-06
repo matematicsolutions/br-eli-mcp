@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "br-eli-mcp"
-version = "0.1.1"
-description = "MCP server for the Camara dos Deputados open-data API (dadosabertos.camara.leg.br) - track Brazilian federal bills with verifiable citations."
+version = "0.2.0"
+description = "MCP server for Camara dos Deputados (bills) and legis.senado.leg.br (enacted Normas Juridicas by URN Lex) - Brazilian federal legislation with verifiable citations."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"

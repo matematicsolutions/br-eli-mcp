@@ -28,3 +28,33 @@ class Citation:
     lex_uri: str
     human_readable_citation: str
     source_url: str
+
+
+@dataclass(frozen=True)
+class Amendment:
+    norma_posterior: str
+    data_assinatura: str | None
+    comentario: str | None
+    dispositivos: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Norma:
+    """A Norma Juridica resolved from legis.senado.leg.br/dadosabertos/legislacao/urn.
+
+    This is a real ELI-equivalent identification (URN Lex), not a bill in the
+    legislative process - contrast with Proposicao above.
+    """
+
+    id: str
+    tipo: str
+    numero: str
+    norma_nome: str
+    apelido: str | None
+    data_assinatura: str | None
+    ementa: str
+    observacao: str | None
+    urn: str
+    url_documento: str
+    fonte_publicacao: str | None
+    amendments: tuple[Amendment, ...]
