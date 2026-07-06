@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.matematicsolutions/br-eli-mcp",
+  "description": "MCP connector for Brazilian federal bills (Camara dos Deputados), verifiable citations",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/matematicsolutions/br-eli-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "br-eli-mcp",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # br-eli-mcp
 
+<!-- mcp-name: io.github.matematicsolutions/br-eli-mcp -->
+
 MCP server for the Camara dos Deputados (Brazilian Chamber of Deputies) open-data API
 (`dadosabertos.camara.leg.br`). Tracks the federal legislative *process* - bills
 (proposicoes) as they move through committees and floor votes.
