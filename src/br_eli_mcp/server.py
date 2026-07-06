@@ -25,26 +25,33 @@ from .citations import build_citation, build_norma_citation, parse_norma, parse_
 from .client import DEFAULT_BASE_URL, CamaraClient
 from .norma_client import DEFAULT_BASE_URL as NORMA_BASE_URL
 from .norma_client import NormaClient
+from .norma_text import build_index, extract_text
+from .text_client import DEFAULT_BASE_URL as TEXT_BASE_URL
+from .text_client import TextClient
 
 INSTRUCTIONS = """\
-This MCP server exposes two independent, keyless, no-registration Brazilian open-data APIs:
+This MCP server exposes three independent, keyless, no-registration Brazilian open-data APIs:
 
 1. **Camara dos Deputados** - the federal legislative PROCESS: bills (proposicoes) as they move through committees and floor votes.
 2. **Congresso Nacional Dados Abertos Legislativos** (legis.senado.leg.br) - the real LexML URN Lex resolver for enacted Normas Juridicas (laws, decrees, constitutional amendments). Confirmed live 2026-07-06 (see DISCOVERY.md "v0.2.0 update") - the v0.1.0 release wrongly reported this as unconfirmed because discovery probed the wrong host (www.lexml.gov.br, which 404s); the real service lives on the Senado's own API gateway.
+3. **normas.leg.br** - the full-text companion to (2): a schema.org Legislation tree, one node per Parte/Livro/Titulo/Capitulo/Secao/Artigo, with real article-level text. Confirmed live 2026-07-06 (see DISCOVERY.md "v0.3.0 update") - closes the gap v0.2.0 flagged as unconfirmed.
 
-## Scope and an honest limitation
+## Scope
 
-- `br_get_norma` gives you the Norma's identification, official publication (Diario Oficial da Uniao) provenance, amendment history, and any STF unconstitutionality notes carried in `observacao` - but **not the full compiled article text**. No mechanical URL rule from a URN Lex to a Planalto (planalto.gov.br) full-text page could be confirmed as of 2026-07 - do not fabricate one. Point the lawyer to `source_url` (normas.leg.br) for the human-readable rendering, or planalto.gov.br if named in `observacao`/general knowledge.
+- `br_get_norma` gives identification, Diario Oficial da Uniao publication provenance, amendment history, and any STF unconstitutionality notes carried in `observacao`.
+- `br_get_norma_index` lists the addressable structure of a norma (parts, books, titles, chapters, sections, articles) - use it to find the `dispositivo` suffix (e.g. `"art5"`) for the article you need, rather than guessing one.
+- `br_get_norma_texto` returns the real text of one dispositivo (an article and its paragraphs/incisos, concatenated in document order) - not a summary, not a paraphrase.
 - If a bill's `situacao` reads "Transformada em Norma Juridica" ("Transformed into a legal norm"), the bill passed and became law - use `br_get_norma` with the resulting URN Lex (if known) to confirm identification, not `br_get_proposicao`.
 
 ## Call order
 
 - Legislative process: `br_search_proposicoes` (by `sigla_tipo` + `ano`) then `br_get_proposicao` (by `id`).
 - Enacted law identification: `br_get_norma` (by URN Lex, e.g. `urn:lex:br:federal:lei:2002-01-10;10406`). The caller supplies the URN - this tool verifies and enriches it, it does not search by keyword or invent a URN.
+- Enacted law text: `br_get_norma_index` (same URN) to find the `dispositivo` suffix, then `br_get_norma_texto` (URN + suffix) for the article text. Do not skip the index step and guess a suffix - `art5` vs `art5_par1u` (paragraph 1) address different text.
 
 ## Hard constraints
 
-- **No free-text keyword search** on either API - proposicoes filter by type/year/number, normas resolve by URN Lex you already have.
+- **No free-text keyword search** on any of the three APIs - proposicoes filter by type/year/number, normas resolve by URN Lex you already have, dispositivos resolve by suffix from `br_get_norma_index`.
 - **Every response has `human_readable_citation` + `source_url`** - cite both to the user.
 - **Audit log JSONL** - every tool call appends to `~/.matematic/audit/br-eli-mcp.jsonl`.
 
@@ -52,14 +59,15 @@ This MCP server exposes two independent, keyless, no-registration Brazilian open
 
 Tools return a structured error with a `[code]` prefix:
 - `invalid_arg` - a parameter is missing or out of range (e.g. a URN Lex not matching the `urn:lex:br:...` scheme).
-- `not_found` - no bill/norma exists for that id / URN.
+- `not_found` - no bill/norma/dispositivo exists for that id / URN / suffix.
 - `upstream_error` - an upstream API error (HTTP, timeout). Retry once before surfacing.
 
 ## Response style
 
 - Cite bills as `human_readable_citation`: "PL 2597/2024".
 - Cite normas as `human_readable_citation`: the official name/apelido, e.g. "Codigo Civil (2002) (CC)".
-- NEVER invent an id, a number, a year, or a URN Lex - take each from the tool output or the caller's own input.
+- Cite dispositivos as `human_readable_citation`: the article label, e.g. "Art. 5o".
+- NEVER invent an id, a number, a year, a URN Lex, or a dispositivo suffix - take each from the tool output or the caller's own input.
 """
 
 
@@ -93,6 +101,10 @@ def _norma_base_url() -> str:
     return os.environ.get("BR_ELI_NORMA_BASE_URL", NORMA_BASE_URL).rstrip("/")
 
 
+def _text_base_url() -> str:
+    return os.environ.get("BR_ELI_TEXT_BASE_URL", TEXT_BASE_URL).rstrip("/")
+
+
 def _audit() -> AuditLogger:
     return AuditLogger()
 
@@ -113,6 +125,14 @@ def _map_norma_upstream(exc: Exception) -> Exception:
         return ToolError("not_found", "No matching Norma Juridica found for that URN Lex.")
     if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
         return ToolError("upstream_error", f"legis.senado.leg.br API error: {type(exc).__name__}: {exc}")
+    return exc
+
+
+def _map_text_upstream(exc: Exception) -> Exception:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+        return ToolError("not_found", "No matching Legislation tree found for that URN Lex.")
+    if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
+        return ToolError("upstream_error", f"normas.leg.br API error: {type(exc).__name__}: {exc}")
     return exc
 
 
@@ -247,6 +267,109 @@ async def br_get_norma(urn: str) -> dict:
         **dataclasses.asdict(citation),
     }
     audit.log(tool="br_get_norma", input_hash=input_hash, output_count_or_size=1,
+              duration_ms=t.duration_ms, status="ok")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# br_get_norma_index
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_get_norma_index(urn: str) -> dict:
+    """List the addressable structure of a Norma Juridica: parts, books, titles,
+    chapters, sections, and articles, in document order.
+
+    Use this to find the `dispositivo` suffix for the article you need (e.g.
+    `"art5"`), then pass it to `br_get_norma_texto` - do not guess a suffix.
+
+    Args:
+        urn: a URN Lex, e.g. ``"urn:lex:br:federal:lei:2002-01-10;10406"``
+            (Codigo Civil). Must start with ``"urn:lex:br:"``.
+
+    Returns:
+        ``{"urn": str, "total": int, "items": [{"suffix", "tipo", "name"}, ...]}``.
+    """
+    audit = _audit()
+    if not urn.startswith(_URN_PREFIX):
+        raise ToolError("invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme).")
+    input_hash = hash_input({"urn": urn})
+
+    with timer() as t:
+        try:
+            async with TextClient(base_url=_text_base_url()) as client:
+                tree = await client.get_legislation_tree(urn)
+        except Exception as exc:
+            audit.log(tool="br_get_norma_index", input_hash=input_hash, output_count_or_size=0,
+                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
+                      error=f"{type(exc).__name__}: {exc}")
+            raise _map_text_upstream(exc) from exc
+
+    if not tree:
+        raise ToolError("not_found", f"No Legislation tree found for urn={urn!r}.")
+    refs = build_index(tree)
+    items = [dataclasses.asdict(r) for r in refs]
+    audit.log(tool="br_get_norma_index", input_hash=input_hash, output_count_or_size=len(items),
+              duration_ms=t.duration_ms, status="ok")
+    return {"urn": urn, "total": len(items), "items": items}
+
+
+# ---------------------------------------------------------------------------
+# br_get_norma_texto
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_get_norma_texto(urn: str, dispositivo: str) -> dict:
+    """Fetch the real text of one dispositivo (article, or a titulo/capitulo
+    header) of a Norma Juridica.
+
+    An article's text includes its caput and every paragraph/inciso/alinea
+    beneath it, concatenated in document order - not a summary.
+
+    Args:
+        urn: a URN Lex, e.g. ``"urn:lex:br:federal:lei:2002-01-10;10406"``.
+        dispositivo: a suffix from `br_get_norma_index`, e.g. ``"art5"``.
+            Never guess one - a wrong suffix returns `not_found`, it does not
+            silently fall back to a different article.
+
+    Returns:
+        A dict with ``dispositivo``, ``text``, ``lex_uri``,
+        ``human_readable_citation``, ``source_url``.
+    """
+    audit = _audit()
+    if not urn.startswith(_URN_PREFIX):
+        raise ToolError("invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme).")
+    if not dispositivo:
+        raise ToolError("invalid_arg", "dispositivo must be a non-empty suffix from br_get_norma_index.")
+    input_hash = hash_input({"urn": urn, "dispositivo": dispositivo})
+
+    with timer() as t:
+        try:
+            async with TextClient(base_url=_text_base_url()) as client:
+                tree = await client.get_legislation_tree(urn)
+        except Exception as exc:
+            audit.log(tool="br_get_norma_texto", input_hash=input_hash, output_count_or_size=0,
+                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
+                      error=f"{type(exc).__name__}: {exc}")
+            raise _map_text_upstream(exc) from exc
+
+    text = extract_text(tree, dispositivo) if tree else None
+    if text is None:
+        raise ToolError("not_found", f"No dispositivo={dispositivo!r} found for urn={urn!r}.")
+
+    refs = {r.suffix: r for r in build_index(tree)}
+    name = refs[dispositivo].name if dispositivo in refs else dispositivo
+    lex_uri = f"{urn}!{dispositivo}"
+    result = {
+        "dispositivo": dispositivo,
+        "text": text,
+        "lex_uri": lex_uri,
+        "human_readable_citation": name or dispositivo,
+        "source_url": f"https://normas.leg.br/?urn={lex_uri}",
+    }
+    audit.log(tool="br_get_norma_texto", input_hash=input_hash, output_count_or_size=len(text),
               duration_ms=t.duration_ms, status="ok")
     return result
 

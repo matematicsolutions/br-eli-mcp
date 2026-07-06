@@ -1,55 +1,76 @@
 # Discovery notes - Brazil
 
-Date: 2026-07-06 (v0.1.0). Updated 2026-07-06 (v0.2.0) - the "not confirmed
-live" conclusion below was wrong. It tested the wrong host.
+Current as of 2026-07-06 (v0.3.0). History below - three earlier releases
+(v0.1.0, v0.2.0) each got something wrong; the corrections are kept for the
+record, not because they're still live guidance.
 
-## v0.2.0 update - live endpoint found: legis.senado.leg.br/dadosabertos
+## Current status
 
-The v0.1.0 probe (below) only tried `www.lexml.gov.br`. The actual live
-service for Normas Juridicas (URN Lex resolution) is the Congresso Nacional's
-own API gateway: `https://legis.senado.leg.br/dadosabertos`, documented via a
-public Swagger UI (`/dadosabertos/api-docs/swagger-ui/index.html`) and an
-OpenAPI 3.1 spec (`/dadosabertos/v3/api-docs`). The spec states explicitly:
-"API de acesso publico, sem necessidade de autenticacao" (public access API,
-no authentication needed). This is not an API-key situation like
-fr-eli-mcp/PISTE - no key, no registration. Rate limit: 10 req/s (HTTP 429
-above that), enforced upstream.
+Two APIs, both public, keyless, no registration:
 
-Confirmed live 2026-07-06 with a real query for the Codigo Civil:
+- `legis.senado.leg.br/dadosabertos` resolves a URN Lex to identification,
+  Diario Oficial da Uniao publication provenance, and amendment history
+  (`br_get_norma`). Confirmed live with a real query for the Codigo Civil:
 
-```
-GET https://legis.senado.leg.br/dadosabertos/legislacao/urn?urn=urn:lex:br:federal:lei:2002-01-10;10406
-Accept: application/json
--> HTTP 200, real data: identificacao (apelido "Codigo Civil (2002) (CC)"),
-   publicacoes (Diario Oficial da Uniao provenance), vides (amendment
-   history per-article). The response's own `observacao` field carries
-   free-text notes from the Senado's editors, including references to STF
-   rulings on specific articles (e.g. ADI 2.794-8 on Art. 66 par.1) - this is
-   the API's data, not a claim we are asserting independently, and it is not
-   a substitute for checking the ruling itself.
-```
+  ```
+  GET https://legis.senado.leg.br/dadosabertos/legislacao/urn?urn=urn:lex:br:federal:lei:2002-01-10;10406
+  Accept: application/json
+  -> HTTP 200, real data: identificacao (apelido "Codigo Civil (2002) (CC)"),
+     publicacoes (DOU provenance), vides (amendment history per-article).
+     The `observacao` field carries the Senado's own editorial notes,
+     including references to STF rulings on specific articles (e.g. ADI
+     2.794-8 on Art. 66 par.1) - that's the API's data, not our claim, and
+     it isn't a substitute for checking the ruling itself.
+  ```
 
-This is now wired into `br_get_norma` (see `norma_client.py` / `citations.py`
-/ `server.py`). The URN Lex the caller queries with is echoed back as
-`lex_uri` - never invented, per Article IV (parse ELI, don't invent it).
+  Wired into `br_get_norma` (`norma_client.py` / `citations.py` /
+  `server.py`). The URN Lex the caller queries with is echoed back as
+  `lex_uri` - never invented, per Article IV (parse ELI, don't invent it).
 
-**Remaining gap: full article text is still not a confirmed API.**
-`br_get_norma` gives identification, provenance, and amendment history, but
-not the compiled article-by-article text (unlike `es_get_text` in
-es-eli-mcp). The full compiled text is publicly readable at
-`www.planalto.gov.br/ccivil_03/...` (confirmed live 2026-07-06, e.g.
-`l10406compilada.htm` for the Codigo Civil, ~900KB HTML with real numbered
-articles), but no mechanical rule from a URN Lex to its Planalto URL could be
-confirmed - URL paths vary by decade-folder and act type, not law
-number+year alone. Scraping Planalto without a confirmed URL-derivation rule
-would risk the same fabricated-citation failure mode this fleet exists to
-prevent, so do not add a `br_get_text` tool until a URN-Lex-to-Planalto-URL
-mapping is confirmed (candidate next step: audit whether
-`Mcp-Brasil/mcp-brasil`, MIT, already solved this mapping).
+- `normas.leg.br/api/public/normas` resolves the same URN Lex to a schema.org
+  `Legislation` JSON-LD tree - one node per Parte/Livro/Titulo/Capitulo/Secao/
+  Artigo/paragrafo, each with its own URN Lex suffix and, on leaf nodes, real
+  inline article text (`br_get_norma_index` + `br_get_norma_texto`). This is
+  a different path on the same domain as the human-readable citation page -
+  the v0.2.0 session only checked the frontend, not its backing API. Tested
+  against the Codigo Civil (`urn:lex:br:federal:lei:2002-01-10;10406`): 2511
+  addressable nodes, `art1`'s text matches Art. 1 of the Codigo Civil. Full
+  response saved as `tests/fixtures/codigo_civil_normas.json` (5.3MB -
+  public-domain Brazilian federal legislation, no licensing concern in
+  redistributing it as a test fixture). Wired into `text_client.py` /
+  `norma_text.py`, both written clean-room against the live response - no
+  code reused from any AGPL project (see the `worldwidelaw/legal-sources`
+  note below).
 
-## v0.1.0 original notes (superseded above, kept for the record)
+- This connector does not scrape Planalto (planalto.gov.br) HTML. No
+  confirmed mechanical rule maps a URN Lex to a Planalto URL for every act
+  type, and fabricating one would risk the same citation-hallucination
+  failure mode this fleet exists to prevent. A minority of act types (mostly
+  decrees, `DEC-n`/`MPV-ss`) have no inline text on `normas.leg.br` either -
+  a Planalto-scraping fallback for those is a candidate follow-up, to be
+  written clean-room if picked up.
 
-### LexML SRU/OAI-PMH - NOT confirmed live (wrong host tested)
+### Note on `worldwidelaw/legal-sources` (AGPL-3.0)
+
+That project's `sources/BR/Planalto/bootstrap.py` solves a different problem:
+a URL-derivation rule for scraping Planalto HTML, used as its own fallback
+when `normas.leg.br` has no inline text. Reading it for method - per the
+fleet's own recon step 0 in `PLAYBOOK.md` - is what pointed this session at
+probing `normas.leg.br` directly. No code, regex, or URL template from that
+AGPL codebase was copied into this Apache-2.0 one.
+
+## History
+
+### v0.2.0 - fixed identification, still missing full text
+
+v0.1.0 (below) had tested the wrong host for identification. v0.2.0 fixed
+that by finding `legis.senado.leg.br/dadosabertos` - see "Current status"
+above - but at the time concluded there was no confirmed way to get full
+article text, and specifically ruled out scraping Planalto without a
+confirmed URL rule. That gap is closed above by `normas.leg.br`'s JSON-LD
+tree, which needs no such rule.
+
+### v0.1.0 - LexML SRU/OAI-PMH not confirmed live (wrong host tested)
 
 LexML documents an SRU (Search/Retrieval via URL) service and a `urn:lex:br:...`
 identifier scheme (Brazil's ELI-equivalent, same lineage as the Italian URN-NIR).
