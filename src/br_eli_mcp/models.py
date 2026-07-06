@@ -58,3 +58,32 @@ class Norma:
     url_documento: str
     fonte_publicacao: str | None
     amendments: tuple[Amendment, ...]
+
+
+@dataclass(frozen=True)
+class Movimento:
+    """One procedural event in a docket's timeline (DataJud ``movimentos``)."""
+
+    codigo: int
+    nome: str | None
+    data_hora: str | None
+
+
+@dataclass(frozen=True)
+class Processo:
+    """A court docket resolved from api-publica.datajud.cnj.jus.br (DataJud CNJ).
+
+    This is procedural docket metadata (parties/classe/timeline), NOT the
+    prose text of a ruling - DataJud carries no ementa/acordao full text.
+    See caselaw_client.py module docstring for the scope this honestly covers.
+    """
+
+    id: str
+    tribunal: str
+    numero_processo: str
+    classe_nome: str | None
+    orgao_julgador: str | None
+    data_ajuizamento: str | None
+    ultima_atualizacao: str | None
+    assuntos: tuple[str, ...]
+    movimentos: tuple[Movimento, ...]

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import Amendment, Citation, Norma, Proposicao
+from .models import Amendment, Citation, Movimento, Norma, Processo, Proposicao
 
 _FICHA_URL = "https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao={id}"
 
@@ -107,4 +107,56 @@ def build_norma_citation(n: Norma) -> Citation:
         lex_uri=n.urn,
         human_readable_citation=human,
         source_url=n.url_documento,
+    )
+
+
+def _parse_movimentos(raw: dict[str, Any]) -> tuple[Movimento, ...]:
+    movs = raw.get("movimentos") or []
+    return tuple(
+        Movimento(
+            codigo=m.get("codigo", 0),
+            nome=m.get("nome"),
+            data_hora=m.get("dataHora"),
+        )
+        for m in movs
+    )
+
+
+def parse_processo(raw: dict[str, Any], tribunal: str) -> Processo:
+    """Parse one docket ``_source`` from a DataJud CNJ tribunal index.
+
+    `tribunal` is the caller's own query input (a key of
+    ``caselaw_client.TRIBUNAL_INDEX``), echoed back - never invented here.
+    """
+    classe = raw.get("classe") or {}
+    orgao = raw.get("orgaoJulgador") or {}
+    assuntos_raw = raw.get("assuntos") or []
+    return Processo(
+        id=str(raw.get("id", "")),
+        tribunal=raw.get("tribunal") or tribunal,
+        numero_processo=raw.get("numeroProcesso", ""),
+        classe_nome=classe.get("nome"),
+        orgao_julgador=orgao.get("nome"),
+        data_ajuizamento=raw.get("dataAjuizamento"),
+        ultima_atualizacao=raw.get("dataHoraUltimaAtualizacao"),
+        assuntos=tuple(a.get("nome", "") for a in assuntos_raw if a.get("nome")),
+        movimentos=_parse_movimentos(raw),
+    )
+
+
+def build_processo_citation(p: Processo) -> Citation:
+    """DataJud carries no per-process public web URL - the CNJ unified process
+    number is itself the citable identifier (queryable back into the same
+    tribunal index), so `lex_uri`/`source_url` both point at that, honestly -
+    not a fabricated URL to a court's own consultation portal we haven't
+    verified per-tribunal.
+    """
+    human = f"{p.tribunal} - Processo {p.numero_processo}"
+    return Citation(
+        lex_uri=f"datajud:{p.tribunal}:{p.numero_processo}",
+        human_readable_citation=human,
+        source_url=(
+            f"https://api-publica.datajud.cnj.jus.br/api_publica_"
+            f"{p.tribunal.lower()}/_search"
+        ),
     )
