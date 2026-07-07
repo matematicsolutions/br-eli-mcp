@@ -2,7 +2,7 @@
 
 <!-- mcp-name: io.github.matematicsolutions/br-eli-mcp -->
 
-MCP server for six keyless, no-registration Brazilian open-data APIs:
+MCP server for eight keyless, no-registration Brazilian open-data APIs:
 
 1. **Camara dos Deputados** (`dadosabertos.camara.leg.br`) - the federal legislative
    *process*: bills (proposicoes) as they move through committees and floor votes.
@@ -19,6 +19,14 @@ MCP server for six keyless, no-registration Brazilian open-data APIs:
    second-highest court. Coverage starts May 2022.
 6. **CARF** (`acordaos.economia.gov.br`) - real acordao (tax ruling) full text from
    Brazil's federal tax appeals board, by exact docket/decision number.
+7. **TST** (`jurisprudencia-backend2.tst.jus.br`) - real ruling full text (inteiro
+   teor) + ementa from the Tribunal Superior do Trabalho, Brazil's labor supreme
+   court: free-text search and exact CNJ-process-number lookup (3,751,594 acordaos,
+   8,483,448 documents across all types - verified live 2026-07-07).
+8. **TCU** (`pesquisa.apps.tcu.gov.br`) - real acordao full text (deliberation,
+   rapporteur's report, vote) from the Tribunal de Contas da Uniao, the Federal
+   Court of Accounts - public-procurement jurisprudence (525,620 acordaos -
+   verified live 2026-07-07).
 
 ## What this is (and isn't)
 
@@ -41,17 +49,16 @@ received, consistent with a bot-challenge/WAF in front of it, not a structured A
 A minority of act types (mostly decrees) have no inline text in `normas.leg.br`
 either; for those, see [DISCOVERY.md](DISCOVERY.md).
 
-For case law, DataJud (docket metadata only, requires your own API key,
-redistribution restricted by CNJ Resolution 446/2022), the STJ Open Data Portal
-(real acordao text, May 2022+), and CARF (real tax-ruling text, exact lookup only)
-are wired in below. TST has a confirmed-live real backend
-(`jurisprudencia-backend2.tst.jus.br`, found via the frontend's own
-`config.json`) that returns real ruling text with a working document-type
-filter and pagination - but no exact-match/process-number lookup could be
-confirmed live (every reverse-engineered filter field left the result count
-unchanged), so this release ships no TST tool rather than one that silently
-can't find a specific case. See [DISCOVERY.md](DISCOVERY.md) for the exact
-probes run and the confirmed request/response contract.
+For case law, DataJud (docket metadata only, redistribution restricted by CNJ
+Resolution 446/2022), the STJ Open Data Portal (real acordao text, May 2022+),
+CARF (real tax-ruling text, exact lookup only), TST (real ruling text - free-text
+search and exact CNJ-process-number lookup, both confirmed live 2026-07-07 after
+a browser network trace of the real frontend revealed the request fields the
+earlier reverse-engineering missed) and TCU (real acordao/relatorio/voto text)
+are wired in below. TRF4/TRF5 were probed and rejected - their hosts never accept
+a connection from outside Brazil (`geo_restricted`) - and RFB's sijut2consulta is
+a scrape-class HTML app with no JSON backend. See [DISCOVERY.md](DISCOVERY.md)
+for the exact probes run and each confirmed request/response contract.
 
 ## Tools
 
@@ -67,6 +74,10 @@ probes run and the confirmed request/response contract.
 | `br_search_case_stj` | Search STJ acordaos (real ruling text) by process number or free text |
 | `br_get_case_stj` | Fetch one STJ acordao by exact process number - ementa + ruling body text |
 | `br_get_case_carf` | Fetch one CARF tax acordao by exact docket or decision number - ementa + ruling body text |
+| `br_search_case_tst` | Search TST labor-court rulings by free text (real ruling text; 3.75M acordaos) |
+| `br_get_case_tst` | Fetch one TST ruling by exact CNJ unified process number - ementa + inteiro teor |
+| `br_search_case_tcu` | Search TCU (Federal Court of Accounts) acordaos by free text (525K acordaos) |
+| `br_get_case_tcu` | Fetch one TCU acordao by (numero, ano, colegiado) - deliberation + report + vote text |
 
 Bill type codes (`sigla_tipo`), for reference:
 
@@ -101,6 +112,8 @@ pip install br-eli-mcp
 | `BR_ELI_DATAJUD_BASE_URL` | `https://api-publica.datajud.cnj.jus.br` |
 | `BR_ELI_STJ_BASE_URL` | `https://dadosabertos.web.stj.jus.br` |
 | `BR_ELI_CARF_BASE_URL` | `https://acordaos.economia.gov.br/solr/acordaos2/select` |
+| `BR_ELI_TST_BASE_URL` | `https://jurisprudencia-backend2.tst.jus.br` |
+| `BR_ELI_TCU_BASE_URL` | `https://pesquisa.apps.tcu.gov.br/rest/publico/base/acordao-completo` |
 
 ## License
 

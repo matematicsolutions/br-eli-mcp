@@ -14,12 +14,15 @@ Two independent sources are wired here:
 
 from __future__ import annotations
 
+import html
+import re
 from typing import Any
 
 from .models import (
     Amendment,
     CasoCARF,
     CasoSTJ,
+    CasoTCU,
     CasoTST,
     Citation,
     Movimento,
@@ -291,18 +294,21 @@ def parse_caso_tst(raw: dict[str, Any]) -> CasoTST:
 
     `orgaoJudicante` and `tipo` are nested objects in the raw response
     (``{"descricao": ...}`` / ``{"codigoTipoJurisprudencia": ...}``) - this
-    reads their sub-fields, it does not invent flattened names. Full ruling
-    text (`txtInteiroTeor`) is frequently absent/redacted in this endpoint's
-    list-view response (confirmed live 2026-07-07 - the backend returned the
-    literal string ``"removido no backend"`` for it on several real records)
-    - `inteiro_teor` is passed through whatever the API actually returned,
-    never backfilled or guessed.
+    reads their sub-fields, it does not invent flattened names. The plain
+    ruling-text field (`txtInteiroTeor`) is frequently redacted in this
+    endpoint's responses (confirmed live 2026-07-07 - the backend returns
+    the literal string ``"removido no backend"``), while the SAME record
+    carries the full prose in ``inteiroTeorHtml`` (confirmed live: 59K chars
+    of HTML on a record whose plain field was redacted). When that happens,
+    `inteiro_teor` falls back to ``inteiroTeorHtml`` mechanically flattened
+    to text (`_strip_html` - the upstream's own words, tags removed) - never
+    backfilled from anywhere else, never guessed.
     """
     orgao = raw.get("orgaoJudicante") or {}
     tipo = raw.get("tipo") or {}
     inteiro_teor = raw.get("txtInteiroTeor")
-    if inteiro_teor == "removido no backend":
-        inteiro_teor = None
+    if inteiro_teor == "removido no backend" or not inteiro_teor:
+        inteiro_teor = _strip_html(raw.get("inteiroTeorHtml"))
     return CasoTST(
         id=str(raw.get("id", "")),
         numero_formatado=raw.get("numFormatado"),
@@ -317,12 +323,12 @@ def parse_caso_tst(raw: dict[str, Any]) -> CasoTST:
 
 
 def build_caso_tst_citation(c: CasoTST) -> Citation:
-    """TST's jurisprudencia backend carries no per-case public web URL and no
-    get-by-id endpoint (see tst_client.py module docstring) - `lex_uri` is
-    the opaque `id` this same backend returned, honestly, not a guessed
-    consultation URL. `source_url` points at the human-facing search
-    frontend (confirmed live), not the raw JSON backend, since a caller
-    cannot re-query the backend by id either.
+    """TST's jurisprudencia backend carries no per-case public web URL -
+    `lex_uri` is the opaque `id` this same backend returned, honestly, not a
+    guessed consultation URL. `source_url` points at the human-facing search
+    frontend (confirmed live), where the `numero_formatado` re-finds the
+    case via the process-number filter (the same `numeracaoUnica` contract
+    this connector's `br_get_case_tst` uses, confirmed live 2026-07-07).
     """
     relator = f", Rel. {c.nome_relator}" if c.nome_relator else ""
     orgao = f", {c.orgao_judicante}" if c.orgao_judicante else ""
@@ -331,4 +337,61 @@ def build_caso_tst_citation(c: CasoTST) -> Citation:
         lex_uri=f"tst:{c.id}",
         human_readable_citation=human,
         source_url="https://jurisprudencia.tst.jus.br/",
+    )
+
+
+# ---------------------------------------------------------------------------
+# TCU (pesquisa.apps.tcu.gov.br)
+# ---------------------------------------------------------------------------
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(value: str | None) -> str | None:
+    """Mechanically flatten the HTML the TCU backend returns for its prose
+    fields (``ACORDAO``/``RELATORIO``/``VOTO``/``SUMARIO``) into plain text:
+    tag removal + entity unescape + whitespace collapse. No summarising, no
+    reordering - the words are the upstream's own, in the upstream's order.
+    """
+    if not value:
+        return value
+    text = _TAG_RE.sub(" ", html.unescape(value))
+    return re.sub(r"\s+", " ", text).strip() or None
+
+
+def parse_caso_tcu(raw: dict[str, Any]) -> CasoTCU:
+    """Parse one document from the TCU ``documentosResumidos`` / ``documento``
+    endpoints (same field names in both; the full-document endpoint adds
+    ``ACORDAO``/``RELATORIO``/``VOTO``).
+    """
+    return CasoTCU(
+        key=raw.get("KEY", ""),
+        numero=raw.get("NUMACORDAO", ""),
+        ano=raw.get("ANOACORDAO", ""),
+        colegiado=raw.get("COLEGIADO"),
+        titulo=raw.get("TITULO"),
+        relator=raw.get("RELATOR"),
+        situacao=raw.get("SITUACAO"),
+        data_sessao=raw.get("DATASESSAO"),
+        sumario=_strip_html(raw.get("SUMARIO")),
+        acordao_texto=_strip_html(raw.get("ACORDAO")),
+        relatorio=_strip_html(raw.get("RELATORIO")),
+        voto=_strip_html(raw.get("VOTO")),
+        url_arquivo_pdf=raw.get("URLARQUIVOPDF"),
+    )
+
+
+def build_caso_tcu_citation(c: CasoTCU) -> Citation:
+    """`source_url` is the record's own ``URLARQUIVOPDF`` when the API
+    returned one (upstream's own data, not a constructed URL); otherwise the
+    human-facing search portal. `lex_uri` is the index's own stable ``KEY``.
+    """
+    relator = f", Rel. {c.relator}" if c.relator else ""
+    colegiado = f" - {c.colegiado}" if c.colegiado else ""
+    human = f"TCU, Acórdão {c.numero}/{c.ano}{colegiado}{relator}".rstrip()
+    return Citation(
+        lex_uri=f"tcu:{c.key}",
+        human_readable_citation=human,
+        source_url=c.url_arquivo_pdf or "https://pesquisa.apps.tcu.gov.br/pesquisa/jurisprudencia",
     )

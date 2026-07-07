@@ -43,7 +43,7 @@ from .cache import HttpCache
 
 DEFAULT_BASE_URL = "https://api-publica.datajud.cnj.jus.br"
 DEFAULT_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
-USER_AGENT = "br-eli-mcp/0.4.0 (+https://github.com/matematicsolutions/br-eli-mcp)"
+USER_AGENT = "br-eli-mcp/0.6.0 (+https://github.com/matematicsolutions/br-eli-mcp)"
 
 # CNJ publishes this key openly on the DataJud Wiki for public use; it can be
 # rotated by CNJ at any time (per their own wiki), so allow an env override

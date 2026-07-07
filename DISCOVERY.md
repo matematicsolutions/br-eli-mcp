@@ -1,8 +1,65 @@
 # Discovery notes - Brazil
 
-Current as of 2026-07-07 (v0.5.0). History below - earlier releases (v0.1.0,
-v0.2.0) each got something wrong; the corrections are kept for the record,
-not because they're still live guidance.
+Current as of 2026-07-07 (v0.6.0). History below - earlier releases (v0.1.0,
+v0.2.0, v0.5.0) each got something wrong; the corrections are kept for the
+record, not because they're still live guidance.
+
+## v0.6.0 update - TST exact-match confirmed (v0.5.0 rejection reversed) + TCU wired in; TRF4/TRF5 and RFB rejected
+
+Widen round, same day as v0.5.0. All probes 2026-07-07.
+
+**TST - the v0.5.0 "unreliable_exact_match" rejection was wrong, and the fix
+is exactly what v0.5.0's own notes prescribed**: a browser network trace of
+the real frontend (`jurisprudencia.tst.jus.br`) submitting a search captured
+the true request body of `POST jurisprudencia-backend2.tst.jus.br/rest/
+pesquisa-textual/{start}/{size}`. Two fields the v0.5.0 static analysis of
+the minified bundle missed turn the silently-no-oping filters into working
+ones: a top-level `"orgao": "TST"` and `numeracaoUnica.orgao` defaulting to
+`"5"`. Replayed from a bare httpx client: baseline ACORDAO 3,751,594
+(`totalRegistros`); free text `e='"adicional de insalubridade"'` narrows to
+228,802; a fully-populated `numeracaoUnica` for a case the endpoint itself
+returned (AIRR 21036-38.2019.5.04.0021) narrows to exactly 1 - the queried
+case. Two more gotchas caught live: (a) `DECISAO_MONOCRATICA`, listed in the
+frontend's own `config.json` and trusted by v0.5.0, is NOT a valid `tipos`
+code - the backend silently ignores it and returns the full 8,483,448-doc
+corpus, so `tst_client.DOC_TYPES` whitelists only the eight codes the real
+frontend sends, each individually verified to change the total; (b)
+`txtInteiroTeor` is often redacted to the literal string "removido no
+backend" while the same record carries the full prose in `inteiroTeorHtml`
+(59K chars on the sample) - the parser falls back to the HTML field,
+mechanically flattened. Wired as `br_search_case_tst` / `br_get_case_tst`.
+
+**TCU - wired in.** The open-data JSON feed
+(`dados-abertos.apps.tcu.gov.br/api/acordao/recupera-acordaos`) is live but
+its filter params silently no-op (ano/numero/colegiado all returned the same
+newest-first page) and records carry only the sumario. The search portal's
+own backend, found via the SPA bundle config plus a network trace, is the
+real machine interface: `GET pesquisa.apps.tcu.gov.br/rest/publico/base/
+acordao-completo/documentosResumidos?termo=...&quantidade=N&inicio=M`
+(dedicated total `quantidadeEncontrada`: 525,620 unfiltered, 53,320 for
+`licitação`; field-scoped `NUMACORDAO:1771 ANOACORDAO:2026` -> 3, one per
+colegiado; adding `COLEGIADO:"Plenário"` -> 1) and `GET .../documento?termo=
+KEY:"..."` returning the full ruling prose (`ACORDAO` deliberation,
+`RELATORIO` 35K chars, `VOTO` 25K chars on the sample record). Wired as
+`br_search_case_tcu` / `br_get_case_tcu`.
+
+**TRF4 / TRF5 - rejected, `geo_restricted` (connection-level).**
+`jurisprudencia.trf4.jus.br`, `juliapesquisa.trf5.jus.br` and even
+`www.trf5.jus.br` never establish a TCP connection from this (EU) client -
+"All connection attempts failed" across two probe rounds minutes apart,
+while every other .jus.br host probed the same minute connected fine.
+Consistent with country-level network blocking, not an outage. Re-check from
+a BR vantage point before believing this rejection forever.
+
+**RFB Solucoes de Consulta (sijut2consulta) - rejected, no machine API.**
+`normas.receita.fazenda.gov.br/sijut2consulta/consulta.action` is a
+server-rendered Struts HTML app; the search page's own markup references only
+`.action` HTML endpoints (no XHR/JSON backend to lift, unlike TST/TCU).
+Scrape-class source - off-principle for this keyless-JSON connector line.
+
+**TJDFT / TJBA (state courts) - not probed this round**: the shortlist's
+rule was "state courts only if the federal targets fail", and TST + TCU both
+shipped. Left as explicit `todo` rows in SOURCES.md, not silent omissions.
 
 ## v0.5.0 update - STJ + CARF ruling text wired in; TST backend found but not wired in; Planalto re-checked and still skipped
 

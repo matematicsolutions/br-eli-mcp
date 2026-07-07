@@ -15,7 +15,7 @@ from .cache import HttpCache
 
 DEFAULT_BASE_URL = "https://dadosabertos.camara.leg.br/api/v2"
 DEFAULT_TIMEOUT = httpx.Timeout(40.0, connect=10.0)
-USER_AGENT = "br-eli-mcp/0.2.0 (+https://github.com/matematicsolutions/br-eli-mcp)"
+USER_AGENT = "br-eli-mcp/0.6.0 (+https://github.com/matematicsolutions/br-eli-mcp)"
 
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3

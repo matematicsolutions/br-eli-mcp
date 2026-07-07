@@ -18,7 +18,7 @@ from .cache import HttpCache
 
 DEFAULT_BASE_URL = "https://normas.leg.br/api/public"
 DEFAULT_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
-USER_AGENT = "br-eli-mcp/0.3.0 (+https://github.com/matematicsolutions/br-eli-mcp)"
+USER_AGENT = "br-eli-mcp/0.6.0 (+https://github.com/matematicsolutions/br-eli-mcp)"
 
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3

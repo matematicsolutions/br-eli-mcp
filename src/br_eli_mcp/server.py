@@ -28,11 +28,15 @@ from .caselaw_client import TRIBUNAL_INDEX, CaselawClient
 from .citations import (
     build_caso_carf_citation,
     build_caso_stj_citation,
+    build_caso_tcu_citation,
+    build_caso_tst_citation,
     build_citation,
     build_norma_citation,
     build_processo_citation,
     parse_caso_carf,
     parse_caso_stj,
+    parse_caso_tcu,
+    parse_caso_tst,
     parse_norma,
     parse_processo,
     parse_proposicao,
@@ -43,21 +47,16 @@ from .norma_client import NormaClient
 from .norma_text import build_index, extract_text
 from .stj_client import DEFAULT_BASE_URL as STJ_BASE_URL
 from .stj_client import ORGAO_DATASET, StjClient
+from .tcu_client import COLEGIADOS, TcuClient
+from .tcu_client import DEFAULT_BASE_URL as TCU_BASE_URL
 from .text_client import DEFAULT_BASE_URL as TEXT_BASE_URL
 from .text_client import TextClient
-
-# NOTE: TST (jurisprudencia-backend2.tst.jus.br) has a real, confirmed-live
-# backend (tst_client.py) - but only a document-type-filtered browse/
-# pagination contract could be confirmed, no exact-match/process-number
-# lookup. This fleet's citation contract expects retrieval of a *specific*,
-# verifiable case, so no br_search_case_tst / br_get_case_tst tool is wired
-# in this release (see DISCOVERY.md "v0.5.0 update"). parse_caso_tst /
-# build_caso_tst_citation / CasoTST exist in citations.py / models.py for
-# that confirmed contract, ready for a future session that either confirms
-# an exact-lookup path or accepts a browse-only tool by design.
+from .tst_client import DEFAULT_BASE_URL as TST_BASE_URL
+from .tst_client import DOC_TYPES as TST_DOC_TYPES
+from .tst_client import TstClient, parse_cnj_numero
 
 INSTRUCTIONS = """\
-This MCP server exposes six independent, keyless, no-registration Brazilian open-data APIs:
+This MCP server exposes eight independent, keyless, no-registration Brazilian open-data APIs:
 
 1. **Camara dos Deputados** - the federal legislative PROCESS: bills (proposicoes) as they move through committees and floor votes.
 2. **Congresso Nacional Dados Abertos Legislativos** (legis.senado.leg.br) - the real LexML URN Lex resolver for enacted Normas Juridicas (laws, decrees, constitutional amendments). Confirmed live 2026-07-06 (see DISCOVERY.md "v0.2.0 update") - the v0.1.0 release wrongly reported this as unconfirmed because discovery probed the wrong host (www.lexml.gov.br, which 404s); the real service lives on the Senado's own API gateway.
@@ -65,6 +64,8 @@ This MCP server exposes six independent, keyless, no-registration Brazilian open
 4. **DataJud CNJ** (api-publica.datajud.cnj.jus.br) - court DOCKET metadata (not ruling text) across STJ/TST/TSE/TRFs/TJs/TRTs/TREs and military courts. Confirmed live 2026-07-06 (see DISCOVERY.md "v0.4.0 update").
 5. **STJ Open Data Portal** (dadosabertos.web.stj.jus.br) - real acordao (ruling) FULL TEXT + ementa (headnote) from the Superior Tribunal de Justica, Brazil's second-highest court. Confirmed live 2026-07-07 (see DISCOVERY.md "v0.5.0 update"). Coverage starts May 2022 - there is no public full-text API for older STJ decisions.
 6. **CARF** (acordaos.economia.gov.br) - real acordao (tax ruling) full text from Brazil's federal tax appeals board. Confirmed live 2026-07-07 (see DISCOVERY.md "v0.5.0 update"). Only exact docket/decision-number lookup is supported - free-text search is not reliably indexed upstream (see `carf_client.py` docstring), so this server does not offer a fuzzy CARF search tool.
+7. **TST** (jurisprudencia-backend2.tst.jus.br) - real ruling FULL TEXT (inteiro teor) + ementa from the Tribunal Superior do Trabalho, Brazil's labor supreme court. Free-text search AND exact CNJ-process-number lookup both confirmed live 2026-07-07 (v0.6.0 widen round; the v0.5.0 session could not confirm filters because the request body was missing two load-bearing fields - see `tst_client.py` docstring). 3,751,594 acordaos / 8,483,448 documents across all eight types.
+8. **TCU** (pesquisa.apps.tcu.gov.br) - real acordao full text (deliberation + rapporteur's report + vote) from the Tribunal de Contas da Uniao, Brazil's Federal Court of Accounts (public-procurement and public-spending jurisprudence). Confirmed live 2026-07-07: 525,620 acordaos, free-text search with a dedicated total field, exact (numero, ano, colegiado) lookup.
 
 ## Scope
 
@@ -75,9 +76,11 @@ This MCP server exposes six independent, keyless, no-registration Brazilian open
 - `br_search_processos` / `br_get_processo` return a court docket's procedural TIMELINE (`movimentos`: distribuicao, conclusao, publicacao, etc.), parties' classe/assuntos, and the deciding `orgaoJulgador` - **not** the prose text of a ruling. DataJud (the source) carries no ementa/acordao full text. Do not present a `movimento` entry as if it were the holding of a decision - it is a docket event label, at most an inferred outcome signal (e.g. "Provimento em Parte").
 - `br_search_case_stj` / `br_get_case_stj` return the real `ementa` (headnote) AND `decisao` (ruling body prose) for STJ acordaos - this DOES carry ruling text, unlike DataJud. Coverage is bounded to the most recent months scanned (see tool docstring) and to May-2022-onwards per the portal's own coverage window - a miss does not mean the case doesn't exist, only that it is outside the scanned window.
 - `br_get_case_carf` returns CARF tax-ruling `ementa` and `decisao_texto` by exact `numero_processo` or `numero_decisao` - there is no `br_search_case_carf` free-text tool because CARF's own full-text index is not reliably populated (confirmed empty on live probing for common terms).
+- `br_search_case_tst` / `br_get_case_tst` return the real `ementa` AND `inteiro_teor` (full ruling prose) for TST rulings. Search is free text ("contendo as palavras" - quote an expression for exact-phrase); get is by exact CNJ unified process number (NNNNNNN-DD.AAAA.5.TR.OOOO - the fifth segment is 5 for the labor courts). Both confirmed live 2026-07-07.
+- `br_search_case_tcu` returns TCU acordao summaries (sumario) with the index's own total; `br_get_case_tcu` returns the real `acordao_texto` (deliberation), `relatorio` (rapporteur's report) and `voto` (vote) prose for one acordao by (numero, ano, colegiado). A numero/ano pair without colegiado can match up to one acordao per deciding body (Plenário / Primeira Câmara / Segunda Câmara) - the tool then errors and lists the matches instead of guessing.
 - **STF is out of scope** - it does not feed DataJud (confirmed: querying it 404s, by design, not outage) and this server has no STF tool. Do not imply STF coverage.
 - **Planalto (planalto.gov.br) is out of scope** - no confirmed mechanical rule maps a URN Lex to a Planalto URL, and `legislacao.presidencia.gov.br` (REFLEGIS) serves a bot-challenge CAPTCHA page to plain HTTP clients (confirmed live 2026-07-07) rather than a structured API. See DISCOVERY.md.
-- **TST (jurisprudencia.tst.jus.br) has no tool here** - a real backend was confirmed live (`jurisprudencia-backend2.tst.jus.br`), but only a document-type-filtered browse/pagination contract could be confirmed, not exact-case or free-text lookup. Per this fleet's citation contract (retrieve a specific, verifiable case), that was not shipped as a tool. See DISCOVERY.md.
+- **TRF4/TRF5 regional federal courts have no tool here** - both jurisprudence hosts were unreachable from outside Brazil on 2026-07-07 (TCP connections never establish; consistent with geo-blocking). See SOURCES.md.
 
 ## Call order
 
@@ -87,10 +90,12 @@ This MCP server exposes six independent, keyless, no-registration Brazilian open
 - Court docket (metadata only): `br_search_processos` (by `tribunal` + free-text `query`, e.g. classe name or a CNJ process number) then `br_get_processo` (by `tribunal` + exact `numero_processo`) for the full movement timeline.
 - STJ ruling text: `br_search_case_stj` (by `orgao` + free text or process number) then `br_get_case_stj` (by `orgao` + exact `numero_processo`) for the full ementa + decisao prose.
 - CARF ruling text: `br_get_case_carf` (by exact `numero_processo` or `numero_decisao`) - no search tool, exact lookup only.
+- TST ruling text: `br_search_case_tst` (free text, optional `tipo`) then `br_get_case_tst` (by exact CNJ unified process number, e.g. `21036-38.2019.5.04.0021`).
+- TCU ruling text: `br_search_case_tcu` (free text or the portal's field-scoped syntax, e.g. `NUMACORDAO:1771 ANOACORDAO:2026`) then `br_get_case_tcu` (by `numero` + `ano`, plus `colegiado` when the pair is ambiguous).
 
 ## Hard constraints
 
-- **No free-text keyword search** on the legislation APIs - proposicoes filter by type/year/number, normas resolve by URN Lex you already have, dispositivos resolve by suffix from `br_get_norma_index`. `br_search_processos` and `br_search_case_stj` DO support free text (classe/relator/ementa terms or a process number) - that is each source's own query model, not an exception invented here. CARF has no free-text tool at all (see Scope above).
+- **No free-text keyword search** on the legislation APIs - proposicoes filter by type/year/number, normas resolve by URN Lex you already have, dispositivos resolve by suffix from `br_get_norma_index`. `br_search_processos`, `br_search_case_stj`, `br_search_case_tst` and `br_search_case_tcu` DO support free text - that is each source's own query model, not an exception invented here. CARF has no free-text tool at all (see Scope above).
 - **Every response has `human_readable_citation` + `source_url`** - cite both to the user.
 - **Audit log JSONL** - every tool call appends to `~/.matematic/audit/br-eli-mcp.jsonl`.
 
@@ -109,6 +114,8 @@ Tools return a structured error with a `[code]` prefix:
 - Cite dockets as `human_readable_citation`: "STJ - Processo <numeroProcesso>".
 - Cite STJ rulings as `human_readable_citation`: "STJ, <classe> <numeroProcesso>, Rel. Min. <nome>, j. DD/MM/AAAA".
 - Cite CARF rulings as `human_readable_citation`: "CARF, <turma/camara>, Ac. <numero_decisao>, Rel. <nome>".
+- Cite TST rulings as `human_readable_citation`: "TST, <numero_formatado>, Rel. <nome>, <orgao_judicante>".
+- Cite TCU rulings as `human_readable_citation`: "TCU, Acórdão <numero>/<ano> - <colegiado>, Rel. <nome>".
 - NEVER invent an id, a number, a year, a URN Lex, or a dispositivo suffix - take each from the tool output or the caller's own input.
 """
 
@@ -157,6 +164,14 @@ def _stj_base_url() -> str:
 
 def _carf_base_url() -> str:
     return os.environ.get("BR_ELI_CARF_BASE_URL", CARF_BASE_URL)
+
+
+def _tst_base_url() -> str:
+    return os.environ.get("BR_ELI_TST_BASE_URL", TST_BASE_URL).rstrip("/")
+
+
+def _tcu_base_url() -> str:
+    return os.environ.get("BR_ELI_TCU_BASE_URL", TCU_BASE_URL).rstrip("/")
 
 
 def _audit() -> AuditLogger:
@@ -217,6 +232,22 @@ def _map_carf_upstream(exc: Exception) -> Exception:
         return ToolError("not_found", "No matching acordao found in the CARF Solr index.")
     if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
         return ToolError("upstream_error", f"CARF Solr API error: {type(exc).__name__}: {exc}")
+    return exc
+
+
+def _map_tst_upstream(exc: Exception) -> Exception:
+    if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
+        return ToolError(
+            "upstream_error", f"TST jurisprudencia API error: {type(exc).__name__}: {exc}"
+        )
+    return exc
+
+
+def _map_tcu_upstream(exc: Exception) -> Exception:
+    if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
+        return ToolError(
+            "upstream_error", f"TCU pesquisa API error: {type(exc).__name__}: {exc}"
+        )
     return exc
 
 
@@ -833,6 +864,276 @@ async def br_get_case_carf(
     result = {**dataclasses.asdict(caso), **dataclasses.asdict(citation)}
     audit.log(
         tool="br_get_case_carf",
+        input_hash=input_hash,
+        output_count_or_size=1,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# br_search_case_tst
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_search_case_tst(query: str, tipo: str = "ACORDAO", limit: int = 20) -> dict:
+    """Search TST (labor supreme court) rulings by free text - real ruling text.
+
+    The query goes into the TST frontend's own "contendo as palavras" (AND)
+    field - quote an expression for an exact-phrase match, e.g.
+    ``"adicional de insalubridade"``. Returns the index's own total plus a
+    page of records carrying the real `ementa` and `inteiro_teor` prose.
+
+    Args:
+        query: free text (AND semantics; quotes for exact phrase).
+        tipo: document type - ``"ACORDAO"`` (default), ``"DESPACHO"``,
+            ``"SUM"`` (sumulas), ``"OJ"`` (orientacoes jurisprudenciais),
+            ``"PN"``, ``"DESPGP"``, ``"DESPGVP"``, ``"DESPGCG"``.
+        limit: max results per page (default 20).
+
+    Returns:
+        ``{"total": int, "items": [...]}`` - `total` is the TST index's own
+        `totalRegistros` for the whole query, not the page size.
+    """
+    audit = _audit()
+    if not query or not query.strip():
+        raise ToolError("invalid_arg", "query must be a non-empty string.")
+    if tipo not in TST_DOC_TYPES:
+        raise ToolError(
+            "invalid_arg", f"tipo={tipo!r} is not supported. Known: {sorted(TST_DOC_TYPES)}."
+        )
+    input_hash = hash_input({"query": query, "tipo": tipo, "limit": limit})
+
+    with timer() as t:
+        try:
+            async with TstClient(base_url=_tst_base_url()) as client:
+                total, raw_items = await client.search_acordaos(query, tipo=tipo, limit=limit)
+        except Exception as exc:
+            audit.log(
+                tool="br_search_case_tst",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_tst_upstream(exc) from exc
+
+    items = []
+    for raw in raw_items:
+        caso = parse_caso_tst(raw)
+        citation = build_caso_tst_citation(caso)
+        items.append({**dataclasses.asdict(caso), **dataclasses.asdict(citation)})
+    audit.log(
+        tool="br_search_case_tst",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return {"total": total, "items": items}
+
+
+# ---------------------------------------------------------------------------
+# br_get_case_tst
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_get_case_tst(numero_processo: str, tipo: str = "ACORDAO") -> dict:
+    """Fetch one TST ruling by its exact CNJ unified process number - real
+    ruling text (`ementa` + `inteiro_teor`).
+
+    Args:
+        numero_processo: CNJ unified process number, formatted
+            (``"21036-38.2019.5.04.0021"``) or as the raw 20 digits. The
+            fifth segment is 5 (Justica do Trabalho) for every TST case.
+        tipo: document type (default ``"ACORDAO"``).
+
+    Returns:
+        A dict with ``numero_formatado``, ``nome_relator``,
+        ``orgao_judicante``, ``data_julgamento``, ``ementa``,
+        ``inteiro_teor`` (full ruling prose), ``human_readable_citation``,
+        ``source_url``.
+    """
+    audit = _audit()
+    if tipo not in TST_DOC_TYPES:
+        raise ToolError(
+            "invalid_arg", f"tipo={tipo!r} is not supported. Known: {sorted(TST_DOC_TYPES)}."
+        )
+    if not numero_processo or parse_cnj_numero(numero_processo) is None:
+        raise ToolError(
+            "invalid_arg",
+            f"numero_processo={numero_processo!r} is not a CNJ unified process number "
+            "(NNNNNNN-DD.AAAA.J.TR.OOOO).",
+        )
+    input_hash = hash_input({"numero_processo": numero_processo, "tipo": tipo})
+
+    with timer() as t:
+        try:
+            async with TstClient(base_url=_tst_base_url()) as client:
+                raw = await client.get_acordao(numero_processo, tipo=tipo)
+        except Exception as exc:
+            audit.log(
+                tool="br_get_case_tst",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_tst_upstream(exc) from exc
+
+    if not raw:
+        raise ToolError(
+            "not_found",
+            f"No TST {tipo} found for numero_processo={numero_processo!r}.",
+        )
+    caso = parse_caso_tst(raw)
+    citation = build_caso_tst_citation(caso)
+    result = {**dataclasses.asdict(caso), **dataclasses.asdict(citation)}
+    audit.log(
+        tool="br_get_case_tst",
+        input_hash=input_hash,
+        output_count_or_size=1,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# br_search_case_tcu
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_search_case_tcu(query: str, limit: int = 20) -> dict:
+    """Search TCU (Federal Court of Accounts) acordaos - public-procurement
+    and public-spending jurisprudence.
+
+    Returns summaries (`sumario`) plus the index's own total. Use
+    `br_get_case_tcu` for the full ruling text of one acordao. The query
+    supports the portal's own field-scoped syntax in addition to plain
+    words, e.g. ``NUMACORDAO:1771 ANOACORDAO:2026``.
+
+    Args:
+        query: free text or field-scoped query.
+        limit: max results (default 20).
+
+    Returns:
+        ``{"total": int, "items": [...]}`` - `total` is the TCU index's own
+        `quantidadeEncontrada` for the whole query, not the page size.
+    """
+    audit = _audit()
+    if not query or not query.strip():
+        raise ToolError("invalid_arg", "query must be a non-empty string.")
+    input_hash = hash_input({"query": query, "limit": limit})
+
+    with timer() as t:
+        try:
+            async with TcuClient(base_url=_tcu_base_url()) as client:
+                total, raw_items = await client.search_acordaos(query, limit=limit)
+        except Exception as exc:
+            audit.log(
+                tool="br_search_case_tcu",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_tcu_upstream(exc) from exc
+
+    items = []
+    for raw in raw_items:
+        caso = parse_caso_tcu(raw)
+        citation = build_caso_tcu_citation(caso)
+        items.append({**dataclasses.asdict(caso), **dataclasses.asdict(citation)})
+    audit.log(
+        tool="br_search_case_tcu",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return {"total": total, "items": items}
+
+
+# ---------------------------------------------------------------------------
+# br_get_case_tcu
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_get_case_tcu(numero: str, ano: str, colegiado: str | None = None) -> dict:
+    """Fetch one TCU acordao with the real ruling text: `acordao_texto`
+    (deliberation), `relatorio` (rapporteur's report) and `voto` (vote).
+
+    A TCU acordao is uniquely identified by (numero, ano, colegiado) - the
+    same numero/ano recurs across the Plenario and the two Camaras. When
+    `colegiado` is omitted and more than one acordao matches, this errors
+    and lists the matching bodies instead of guessing.
+
+    Args:
+        numero: acordao number, e.g. ``"1771"``.
+        ano: four-digit year, e.g. ``"2026"``.
+        colegiado: deciding body - ``"Plenário"``, ``"Primeira Câmara"`` or
+            ``"Segunda Câmara"`` (accent-sensitive, as spelled in the index).
+
+    Returns:
+        A dict with ``numero``, ``ano``, ``colegiado``, ``relator``,
+        ``data_sessao``, ``sumario``, ``acordao_texto``, ``relatorio``,
+        ``voto``, ``human_readable_citation``, ``source_url``.
+    """
+    audit = _audit()
+    if not numero or not numero.strip().isdigit():
+        raise ToolError("invalid_arg", f"numero={numero!r} must be a number, e.g. '1771'.")
+    if not ano or not (ano.strip().isdigit() and len(ano.strip()) == 4):
+        raise ToolError("invalid_arg", f"ano={ano!r} must be a four-digit year, e.g. '2026'.")
+    if colegiado is not None and colegiado not in COLEGIADOS:
+        raise ToolError(
+            "invalid_arg",
+            f"colegiado={colegiado!r} is not supported. Known: {list(COLEGIADOS)}.",
+        )
+    input_hash = hash_input({"numero": numero, "ano": ano, "colegiado": colegiado})
+
+    with timer() as t:
+        try:
+            async with TcuClient(base_url=_tcu_base_url()) as client:
+                match_count, raw = await client.get_acordao(
+                    numero.strip(), ano.strip(), colegiado
+                )
+        except Exception as exc:
+            audit.log(
+                tool="br_get_case_tcu",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_tcu_upstream(exc) from exc
+
+    if match_count == 0 or not raw:
+        raise ToolError(
+            "not_found",
+            f"No TCU acordao found for numero={numero!r}, ano={ano!r}, "
+            f"colegiado={colegiado!r}.",
+        )
+    if match_count > 1:
+        raise ToolError(
+            "invalid_arg",
+            f"Acórdão {numero}/{ano} matches {match_count} documents (one per deciding "
+            f"body). Pass colegiado - one of {list(COLEGIADOS)} - to disambiguate.",
+        )
+    caso = parse_caso_tcu(raw)
+    citation = build_caso_tcu_citation(caso)
+    result = {**dataclasses.asdict(caso), **dataclasses.asdict(citation)}
+    audit.log(
+        tool="br_get_case_tcu",
         input_hash=input_hash,
         output_count_or_size=1,
         duration_ms=t.duration_ms,

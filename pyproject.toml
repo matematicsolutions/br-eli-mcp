@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "br-eli-mcp"
-version = "0.5.0"
-description = "MCP server for Camara dos Deputados (bills), legis.senado.leg.br (Normas Juridicas by URN Lex), normas.leg.br (real article text), DataJud CNJ (court docket metadata), STJ Open Data (real ruling text) and CARF (real tax-ruling text) - Brazilian federal legislation and case law with verifiable citations."
+version = "0.6.0"
+description = "MCP server for Camara dos Deputados (bills), legis.senado.leg.br (Normas Juridicas by URN Lex), normas.leg.br (real article text), DataJud CNJ (court docket metadata), STJ Open Data, CARF, TST and TCU (real ruling text) - Brazilian federal legislation and case law with verifiable citations."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"

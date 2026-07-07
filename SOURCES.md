@@ -96,36 +96,92 @@
   still be the only option (decrees, provisional measures) if this is revisited
   with a browser-automation approach (out of scope for this connector's
   keyless-HTTP-only architecture).
-## TST (`jurisprudencia-backend2.tst.jus.br`) - confirmed live, NOT wired into a tool this release
+## TST (`jurisprudencia-backend2.tst.jus.br`) - WIRED IN v0.6.0 (v0.5.0 rejection reversed)
 
 - **Origin**: Tribunal Superior do Trabalho (TST), Brazil's labor supreme court.
 - **Access**: the public frontend (`jurisprudencia.tst.jus.br`) is a React SPA;
-  every plausible REST/CKAN/Swagger path tried directly against it 200s with
-  the SPA's own `index.html` fallback, not a real endpoint. Its own
-  `config.json` (`https://jurisprudencia.tst.jus.br/config.json`) discloses
-  the real backend host, `jurisprudencia-backend2.tst.jus.br`, which serves
-  `POST /rest/pesquisa-textual/{start}/{size}` - confirmed live 2026-07-07 with
-  real paginated JSON records (`totalRegistros`, `registros[].registro`).
-- **Confirmed working**: a `tipos` document-type filter (e.g. `["ACORDAO"]`)
-  measurably narrows the result count (3.75M of 8.48M total for `ACORDAO`
-  alone) and pagination is stable across repeated calls. Record fields include
-  `numero`/`numFormatado`, `nomRelator`, `orgaoJudicante`, `dtaJulgamento`,
-  `dtaPublicacao`, `ementa`/`ementaHtml`, `txtInteiroTeor` (full ruling text).
-- **NOT confirmed / not implemented**: every free-text or exact-lookup filter
-  field reverse-engineered from the minified frontend bundle (`ementa`, `e`,
-  `ou`, `termoExato`, a `numeracaoUnica` process-number object) was tried live
-  and did **not** change the result count, including the exact `numeracaoUnica`
-  of a record the endpoint had just returned itself - so only a type-filtered
-  browse contract is confirmed, not a "look up this exact case" contract. Per
-  this connector's anti-hallucination policy: ship a search tool people can
-  trust to actually find a specific case, or don't ship one - this release
-  does neither halfway, so no TST tool is exposed. Revisit once an exact-match
-  filter is confirmed (e.g. via a browser network trace of the real frontend
-  request) or TST publishes open data (dados abertos) analogous to STJ's CKAN
-  portal.
+  its own `config.json` discloses the real backend host,
+  `jurisprudencia-backend2.tst.jus.br`, which serves
+  `POST /rest/pesquisa-textual/{start}/{size}` - keyless JSON, confirmed live
+  2026-07-07 (`totalRegistros`, `registros[].registro`).
+- **v0.5.0 rejected this as `unreliable_exact_match`** because every filter
+  field reverse-engineered from the minified bundle silently no-oped. That
+  rejection is REVERSED in v0.6.0: a browser network trace of the real
+  frontend (the exact re-check v0.5.0's own notes prescribed) showed the true
+  request body carries a top-level `"orgao": "TST"` and a `numeracaoUnica`
+  whose `orgao` sub-field defaults to `"5"` - with those two fields present,
+  the same filters work from a bare HTTP client. Confirmed live 2026-07-07:
+  baseline `tipos=["ACORDAO"]` = 3,751,594; free text `e` narrows to 228,802
+  for one phrase; a fully-populated `numeracaoUnica` narrows to exactly 1 -
+  the queried case. All eight documents types together = 8,483,448.
+- **Coverage**: real ruling full text. `txtInteiroTeor` is often redacted
+  upstream to the literal "removido no backend", but the same record carries
+  `inteiroTeorHtml` (confirmed live, 59K chars on the sample) - the parser
+  falls back to that, mechanically flattened to text. Gotcha:
+  `DECISAO_MONOCRATICA` (listed in the frontend's own config.json) is NOT a
+  valid `tipos` code - the backend silently ignores unknown codes and returns
+  the full corpus, so only the eight codes captured from the real frontend
+  (each verified to change the total) are accepted.
+
+## TCU (`pesquisa.apps.tcu.gov.br/rest/publico`) - WIRED IN v0.6.0
+
+- **Origin**: Tribunal de Contas da Uniao (TCU), Brazil's Federal Court of
+  Accounts - public-procurement and public-spending jurisprudence.
+- **License**: public open data (TCU also publishes the same bases as bulk
+  CSVs on `sites.tcu.gov.br/dados-abertos/jurisprudencia/`).
+- **Access**: keyless REST JSON, confirmed live 2026-07-07.
+  `GET /rest/publico/base/acordao-completo/documentosResumidos?termo=...`
+  (search; dedicated total field `quantidadeEncontrada` = 525,620 unfiltered)
+  and `GET .../documento?termo=...` (full document). The separate open-data
+  feed `dados-abertos.apps.tcu.gov.br/api/acordao/recupera-acordaos` was
+  probed first and NOT used: live, but its filter params silently no-op and
+  its records carry only the sumario.
+- **Coverage**: real ruling prose - `ACORDAO` (deliberation), `RELATORIO`
+  (rapporteur's report) and `VOTO` (vote), confirmed live (35K+ chars of
+  RELATORIO on the sample record). Exact lookup is (numero, ano, colegiado):
+  a numero/ano pair alone matches up to one acordao per deciding body
+  (confirmed live: `NUMACORDAO:1771 ANOACORDAO:2026` -> 3), so the get tool
+  refuses to guess and lists the bodies instead.
+
+## TRF4 / TRF5 (regional federal courts) - rejected v0.6.0, `geo_restricted`
+
+- `jurisprudencia.trf4.jus.br`, `juliapesquisa.trf5.jus.br` and even the TRF5
+  main site never establish a TCP connection from this (EU) client - "All
+  connection attempts failed" across two probe rounds on 2026-07-07, while
+  every other `.jus.br` host probed the same minute connected fine.
+  Consistent with country-level network blocking. Re-check from a Brazilian
+  vantage point before treating this rejection as permanent.
+
+## RFB Solucoes de Consulta (`normas.receita.fazenda.gov.br/sijut2consulta`) - rejected v0.6.0, no machine API
+
+- Server-rendered Struts HTML application (`consulta.action` /
+  `link.action?idAto=...`); the search page's own markup references no
+  XHR/JSON backend to lift (unlike TST/TCU, whose SPAs disclosed real JSON
+  services). Scrape-class - off-principle for this keyless-JSON connector.
 - **Querido Diario** (`queridodiario.ok.org.br`) - municipal (not federal) official
   gazettes; out of scope for this connector's federal-legislation/case-law focus.
   Checked live 2026-07-07: the root site and two guessed API paths
   (`/api/v1/gazettes`, `/api/gazettes`) all returned HTTP 403 to a plain client
   (likely a Cloudflare/WAF rule on bare requests, not a hard block - not
   investigated further given the lower priority). Lower priority per task scope.
+
+## LDH cross-reference ledger (`eu-legal-mcp/PLAYBOOK.md` section 8 convention)
+
+| LDH id | Our status | LDH status @ check | Notes |
+|---|---|---|---|
+| BR/CamaraDeputados | shipped | - (not recorded at that check) | see above |
+| BR/LexML, BR/SenadoLegislacao | shipped | - (not recorded at that check) | see above |
+| BR/STJDadosAbertos | shipped | - (not recorded at that check) | see above, 2026-07-07 |
+| BR/CARF | shipped | - (not recorded at that check) | see above, 2026-07-07 |
+| BR/TST | **shipped v0.6.0** (v0.5.0 rejection `unreliable_exact_match` REVERSED same day) | complete @ 2026-07-07 | exact-match confirmed via browser network trace; see above |
+| BR/TCU | shipped v0.6.0 | complete @ 2026-07-07 | 525,620 acordaos, full ruling prose; see above |
+| BR/TRF4 | rejected - `geo_restricted` | complete @ 2026-07-07 | no TCP connection from EU client, 2 rounds; see above |
+| BR/TRF5 | rejected - `geo_restricted` | complete @ 2026-07-07 | same as TRF4; TRF1/2/6 not probed (different backends, same expected block - verify from BR first) |
+| BR/RFB (sijut2consulta) | rejected - `no_machine_api` (scrape-class Struts HTML) | complete @ 2026-07-07 | see above |
+| BR/TJDFT | todo | complete @ 2026-07-07 | not probed - shortlist rule was "state courts only if federal targets fail"; TST+TCU shipped |
+| BR/TJBA | todo | complete @ 2026-07-07 | same as TJDFT (GraphQL backend per LDH) |
+| BR/Planalto | rejected - `bot_protection` | - (not recorded at that check) | see above |
+| BR/QueridoDiario | rejected - `bot_protection` | - (not recorded at that check) | see above |
+| BR/STF | rejected - `bot_protection` (`aws_waf_browser_required`) | - (not recorded at that check) | blocked for LDH too |
+
+Last updated: 2026-07-07 (v0.6.0 widen round - TST+TCU shipped; see `eu-legal-mcp/AUDIT-LOG.md`).

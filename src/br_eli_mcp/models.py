@@ -132,21 +132,13 @@ class CasoCARF:
     arquivo_pdf: str | None
 
 
-# NOTE: TST (jurisprudencia-backend2.tst.jus.br) was investigated live in
-# v0.5.0 discovery and has a real, confirmed-working backend, but only a
-# document-type-filtered browse/pagination contract could be confirmed - no
-# exact-match/process-number lookup. Per this fleet's citation contract
-# (retrieve a *specific*, verifiable case), a browse-only tool without a
-# reliable exact-lookup path is not shipped this release. See DISCOVERY.md
-# "TST - real backend CONFIRMED LIVE, but NOT wired into a tool this release".
-# CasoTST/parse_caso_tst/build_caso_tst_citation exist for that confirmed
-# contract, but no MCP tool calls them yet.
 @dataclass(frozen=True)
 class CasoTST:
     """One ruling record from the TST jurisprudencia search backend
-    (jurisprudencia-backend2.tst.jus.br). See tst_client.py module docstring
-    for the confirmed-vs-unconfirmed scope of what can be queried (doc-type
-    filter + pagination, NOT free-text or process-number search).
+    (jurisprudencia-backend2.tst.jus.br). Free-text search AND exact
+    CNJ-process-number lookup were both confirmed live 2026-07-07 (v0.6.0
+    widen round) once the real request shape was captured from a browser
+    network trace - see tst_client.py module docstring for the probes.
     """
 
     id: str
@@ -158,3 +150,28 @@ class CasoTST:
     tipo: str | None
     ementa: str | None
     inteiro_teor: str | None
+
+
+@dataclass(frozen=True)
+class CasoTCU:
+    """One acordao resolved from pesquisa.apps.tcu.gov.br (TCU - Tribunal de
+    Contas da Uniao, Federal Court of Accounts). The full-document endpoint
+    carries the real deliberation (``ACORDAO``), rapporteur's report
+    (``RELATORIO``) and vote (``VOTO``) prose - see tcu_client.py module
+    docstring for the confirmed contract. A TCU acordao is uniquely
+    identified by (numero, ano, colegiado).
+    """
+
+    key: str
+    numero: str
+    ano: str
+    colegiado: str | None
+    titulo: str | None
+    relator: str | None
+    situacao: str | None
+    data_sessao: str | None
+    sumario: str | None
+    acordao_texto: str | None
+    relatorio: str | None
+    voto: str | None
+    url_arquivo_pdf: str | None
