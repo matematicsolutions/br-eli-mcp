@@ -16,7 +16,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import Amendment, Citation, Movimento, Norma, Processo, Proposicao
+from .models import (
+    Amendment,
+    CasoCARF,
+    CasoSTJ,
+    CasoTST,
+    Citation,
+    Movimento,
+    Norma,
+    Processo,
+    Proposicao,
+)
 
 _FICHA_URL = "https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao={id}"
 
@@ -58,7 +68,7 @@ def _parse_amendments(raw: dict[str, Any]) -> tuple[Amendment, ...]:
         vides = [vides]
     out: list[Amendment] = []
     for v in vides:
-        itens = (v.get("itens") or {})
+        itens = v.get("itens") or {}
         item_list = itens.get("item") if isinstance(itens, dict) else []
         if isinstance(item_list, dict):
             item_list = [item_list]
@@ -156,7 +166,169 @@ def build_processo_citation(p: Processo) -> Citation:
         lex_uri=f"datajud:{p.tribunal}:{p.numero_processo}",
         human_readable_citation=human,
         source_url=(
-            f"https://api-publica.datajud.cnj.jus.br/api_publica_"
-            f"{p.tribunal.lower()}/_search"
+            f"https://api-publica.datajud.cnj.jus.br/api_publica_{p.tribunal.lower()}/_search"
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# STJ (dadosabertos.web.stj.jus.br)
+# ---------------------------------------------------------------------------
+
+
+def parse_caso_stj(raw: dict[str, Any], orgao: str) -> CasoSTJ:
+    """Parse one acordao record from a STJ Open Data monthly "espelho" file.
+
+    `orgao` is the caller's own query input (a key of `stj_client.ORGAO_DATASET`),
+    echoed back - never invented here.
+    """
+    return CasoSTJ(
+        id=str(raw.get("id", "")),
+        orgao_julgador=raw.get("nomeOrgaoJulgador") or orgao,
+        numero_processo=raw.get("numeroProcesso", ""),
+        numero_registro=raw.get("numeroRegistro"),
+        sigla_classe=raw.get("siglaClasse"),
+        descricao_classe=raw.get("descricaoClasse"),
+        ministro_relator=raw.get("ministroRelator"),
+        data_decisao=raw.get("dataDecisao"),
+        data_publicacao=raw.get("dataPublicacao"),
+        ementa=raw.get("ementa") or "",
+        decisao=raw.get("decisao"),
+        tipo_de_decisao=raw.get("tipoDeDecisao"),
+    )
+
+
+def build_caso_stj_citation(c: CasoSTJ) -> Citation:
+    """STJ's open-data portal carries no per-case public web URL - the
+    (numeroProcesso, id) pair is the citable identifier into this same
+    dataset, so `lex_uri` reflects that honestly rather than guessing a
+    jurisprudencia.stj.jus.br consultation URL we have not confirmed live.
+    """
+    relator = f", Rel. Min. {c.ministro_relator}" if c.ministro_relator else ""
+    data = c.data_decisao or ""
+    if len(data) == 8 and data.isdigit():
+        data = f"{data[6:8]}/{data[4:6]}/{data[0:4]}"
+    julgado_em = f", j. {data}" if data else ""
+    human = f"STJ, {c.sigla_classe or 'Processo'} {c.numero_processo}{relator}{julgado_em}"
+    return Citation(
+        lex_uri=f"stj:{c.orgao_julgador}:{c.numero_processo}",
+        human_readable_citation=human,
+        source_url="https://dadosabertos.web.stj.jus.br/dataset/",
+    )
+
+
+# ---------------------------------------------------------------------------
+# CARF (acordaos.economia.gov.br)
+# ---------------------------------------------------------------------------
+
+
+def parse_caso_carf(raw: dict[str, Any]) -> CasoCARF:
+    """Parse one acordao document from the CARF Solr open-data index."""
+    decisao_txt = raw.get("decisao_txt")
+    if isinstance(decisao_txt, list):
+        decisao_txt = "\n".join(decisao_txt)
+    return CasoCARF(
+        id=str(raw.get("id", "") or raw.get("conteudo_id_s", "")),
+        numero_processo=raw.get("numero_processo_s", ""),
+        numero_decisao=raw.get("numero_decisao_s"),
+        camara=raw.get("camara_s"),
+        turma=raw.get("turma_s"),
+        secao=raw.get("secao_s"),
+        relator=raw.get("nome_relator_s"),
+        data_publicacao=raw.get("dt_publicacao_tdt"),
+        data_sessao=raw.get("dt_sessao_tdt"),
+        ementa=raw.get("ementa_s"),
+        decisao_texto=decisao_txt,
+        arquivo_pdf=raw.get("nome_arquivo_pdf_s"),
+    )
+
+
+def _carf_pdf_url(c: CasoCARF) -> str | None:
+    """Return the CARF acordao PDF URL, confirmed live 2026-07-07.
+
+    Every CARF Solr record already carries its own exact PDF filename in
+    `nome_arquivo_pdf_s` (parsed into `c.arquivo_pdf`, e.g.
+    ``"16095000602200770_5643663.pdf"``) - that field is the upstream API's
+    own data, not something this client derives. The one thing confirmed by
+    live probing here is the base path it resolves under
+    (`/solr/acordaos2/browse/` renders these filenames as links to
+    ``https://acordaos.economia.gov.br/acordaos2/pdfs/processados/<filename>``,
+    and fetching that constructed URL for a real record returned HTTP 200
+    with a real PDF body, not a 404). So this only ever joins a base path to
+    a filename the API already gave us - it never invents the filename
+    itself (`numero_processo_s` and the Solr `id` field are NOT the same
+    number as the `conteudo_id_s` baked into this filename, so guessing it
+    from other fields would be wrong).
+    """
+    if not c.arquivo_pdf:
+        return None
+    return f"https://acordaos.economia.gov.br/acordaos2/pdfs/processados/{c.arquivo_pdf}"
+
+
+def build_caso_carf_citation(c: CasoCARF) -> Citation:
+    """`lex_uri` is the confirmed-live PDF URL when derivable (see
+    `_carf_pdf_url`); otherwise it falls back to the Solr search endpoint so
+    the caller always gets a working `source_url`, never a guessed link.
+    """
+    relator = f", Rel. {c.relator}" if c.relator else ""
+    orgao = c.turma or c.camara or c.secao or "CARF"
+    human = f"CARF, {orgao}, Ac. {c.numero_decisao or c.numero_processo}{relator}".rstrip()
+    pdf_url = _carf_pdf_url(c)
+    return Citation(
+        lex_uri=pdf_url or f"carf:{c.numero_processo}",
+        human_readable_citation=human,
+        source_url=pdf_url or "https://acordaos.economia.gov.br/solr/acordaos2/select",
+    )
+
+
+# ---------------------------------------------------------------------------
+# TST (jurisprudencia-backend2.tst.jus.br)
+# ---------------------------------------------------------------------------
+
+
+def parse_caso_tst(raw: dict[str, Any]) -> CasoTST:
+    """Parse one ruling record from the TST jurisprudencia search backend.
+
+    `orgaoJudicante` and `tipo` are nested objects in the raw response
+    (``{"descricao": ...}`` / ``{"codigoTipoJurisprudencia": ...}``) - this
+    reads their sub-fields, it does not invent flattened names. Full ruling
+    text (`txtInteiroTeor`) is frequently absent/redacted in this endpoint's
+    list-view response (confirmed live 2026-07-07 - the backend returned the
+    literal string ``"removido no backend"`` for it on several real records)
+    - `inteiro_teor` is passed through whatever the API actually returned,
+    never backfilled or guessed.
+    """
+    orgao = raw.get("orgaoJudicante") or {}
+    tipo = raw.get("tipo") or {}
+    inteiro_teor = raw.get("txtInteiroTeor")
+    if inteiro_teor == "removido no backend":
+        inteiro_teor = None
+    return CasoTST(
+        id=str(raw.get("id", "")),
+        numero_formatado=raw.get("numFormatado"),
+        orgao_judicante=orgao.get("descricao"),
+        nome_relator=raw.get("nomRelator"),
+        data_julgamento=raw.get("dtaJulgamento"),
+        data_publicacao=raw.get("dtaPublicacao"),
+        tipo=tipo.get("nome") or tipo.get("codigoTipoJurisprudencia"),
+        ementa=raw.get("ementa"),
+        inteiro_teor=inteiro_teor,
+    )
+
+
+def build_caso_tst_citation(c: CasoTST) -> Citation:
+    """TST's jurisprudencia backend carries no per-case public web URL and no
+    get-by-id endpoint (see tst_client.py module docstring) - `lex_uri` is
+    the opaque `id` this same backend returned, honestly, not a guessed
+    consultation URL. `source_url` points at the human-facing search
+    frontend (confirmed live), not the raw JSON backend, since a caller
+    cannot re-query the backend by id either.
+    """
+    relator = f", Rel. {c.nome_relator}" if c.nome_relator else ""
+    orgao = f", {c.orgao_judicante}" if c.orgao_judicante else ""
+    human = f"TST, {c.numero_formatado or c.id}{relator}{orgao}".rstrip()
+    return Citation(
+        lex_uri=f"tst:{c.id}",
+        human_readable_citation=human,
+        source_url="https://jurisprudencia.tst.jus.br/",
     )

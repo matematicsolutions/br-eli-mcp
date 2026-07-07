@@ -73,9 +73,7 @@ class CamaraClient:
         assert last_exc is not None
         raise last_exc
 
-    async def search_proposicoes(
-        self, sigla_tipo: str, ano: int, itens: int = 20
-    ) -> list[dict]:
+    async def search_proposicoes(self, sigla_tipo: str, ano: int, itens: int = 20) -> list[dict]:
         data = await self._get_json(
             "/proposicoes",
             {

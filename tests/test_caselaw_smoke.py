@@ -46,5 +46,7 @@ async def test_stf_is_not_covered() -> None:
 
     async with CaselawClient() as client:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await client._post_search("api_publica_stf", {"query": {"match_all": {}}, "size": 1}, category="search")
+            await client._post_search(
+                "api_publica_stf", {"query": {"match_all": {}}, "size": 1}, category="search"
+            )
         assert exc_info.value.response.status_code == 404

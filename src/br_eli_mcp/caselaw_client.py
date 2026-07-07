@@ -48,9 +48,7 @@ USER_AGENT = "br-eli-mcp/0.4.0 (+https://github.com/matematicsolutions/br-eli-mc
 # CNJ publishes this key openly on the DataJud Wiki for public use; it can be
 # rotated by CNJ at any time (per their own wiki), so allow an env override
 # rather than hardcoding an expectation that this never changes.
-DATAJUD_PUBLIC_KEY = (
-    "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
-)
+DATAJUD_PUBLIC_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
 
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3
@@ -66,18 +64,68 @@ TRIBUNAL_INDEX = {
     **{f"TRF{n}": f"api_publica_trf{n}" for n in range(1, 7)},
     **{
         f"TJ{uf}": f"api_publica_tj{uf.lower()}"
-        for uf in (
-            "AC AL AM AP BA CE DFT ES GO MA MG MS MT PA PB PE PI PR RJ RN RO"
-            " RR RS SC SE SP TO"
-        ).split()
+        for uf in [
+            "AC",
+            "AL",
+            "AM",
+            "AP",
+            "BA",
+            "CE",
+            "DFT",
+            "ES",
+            "GO",
+            "MA",
+            "MG",
+            "MS",
+            "MT",
+            "PA",
+            "PB",
+            "PE",
+            "PI",
+            "PR",
+            "RJ",
+            "RN",
+            "RO",
+            "RR",
+            "RS",
+            "SC",
+            "SE",
+            "SP",
+            "TO",
+        ]
     },
     **{f"TRT{n}": f"api_publica_trt{n}" for n in range(1, 25)},
     **{
         f"TRE-{uf}": f"api_publica_tre-{uf.lower()}"
-        for uf in (
-            "AC AL AM AP BA CE DFT ES GO MA MG MS MT PA PB PE PI PR RJ RN RO"
-            " RR RS SC SE SP TO"
-        ).split()
+        for uf in [
+            "AC",
+            "AL",
+            "AM",
+            "AP",
+            "BA",
+            "CE",
+            "DFT",
+            "ES",
+            "GO",
+            "MA",
+            "MG",
+            "MS",
+            "MT",
+            "PA",
+            "PB",
+            "PE",
+            "PI",
+            "PR",
+            "RJ",
+            "RN",
+            "RO",
+            "RR",
+            "RS",
+            "SC",
+            "SE",
+            "SP",
+            "TO",
+        ]
     },
     "TJM-MG": "api_publica_tjmmg",
     "TJM-RS": "api_publica_tjmrs",
@@ -150,9 +198,7 @@ class CaselawClient:
         assert last_exc is not None
         raise last_exc
 
-    async def search_processos(
-        self, tribunal: str, query: str, limit: int = 20
-    ) -> list[dict]:
+    async def search_processos(self, tribunal: str, query: str, limit: int = 20) -> list[dict]:
         """Free-text search (classe/assuntos/orgaoJulgador/numeroProcesso) within
         one tribunal's DataJud index.
 

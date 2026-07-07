@@ -21,13 +21,18 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from .audit import AuditLogger, hash_input, timer
-from .caselaw_client import TRIBUNAL_INDEX
+from .carf_client import DEFAULT_BASE_URL as CARF_BASE_URL
+from .carf_client import CarfClient
 from .caselaw_client import DEFAULT_BASE_URL as CASELAW_BASE_URL
-from .caselaw_client import CaselawClient
+from .caselaw_client import TRIBUNAL_INDEX, CaselawClient
 from .citations import (
+    build_caso_carf_citation,
+    build_caso_stj_citation,
     build_citation,
     build_norma_citation,
     build_processo_citation,
+    parse_caso_carf,
+    parse_caso_stj,
     parse_norma,
     parse_processo,
     parse_proposicao,
@@ -36,16 +41,30 @@ from .client import DEFAULT_BASE_URL, CamaraClient
 from .norma_client import DEFAULT_BASE_URL as NORMA_BASE_URL
 from .norma_client import NormaClient
 from .norma_text import build_index, extract_text
+from .stj_client import DEFAULT_BASE_URL as STJ_BASE_URL
+from .stj_client import ORGAO_DATASET, StjClient
 from .text_client import DEFAULT_BASE_URL as TEXT_BASE_URL
 from .text_client import TextClient
 
+# NOTE: TST (jurisprudencia-backend2.tst.jus.br) has a real, confirmed-live
+# backend (tst_client.py) - but only a document-type-filtered browse/
+# pagination contract could be confirmed, no exact-match/process-number
+# lookup. This fleet's citation contract expects retrieval of a *specific*,
+# verifiable case, so no br_search_case_tst / br_get_case_tst tool is wired
+# in this release (see DISCOVERY.md "v0.5.0 update"). parse_caso_tst /
+# build_caso_tst_citation / CasoTST exist in citations.py / models.py for
+# that confirmed contract, ready for a future session that either confirms
+# an exact-lookup path or accepts a browse-only tool by design.
+
 INSTRUCTIONS = """\
-This MCP server exposes four independent, keyless, no-registration Brazilian open-data APIs:
+This MCP server exposes six independent, keyless, no-registration Brazilian open-data APIs:
 
 1. **Camara dos Deputados** - the federal legislative PROCESS: bills (proposicoes) as they move through committees and floor votes.
 2. **Congresso Nacional Dados Abertos Legislativos** (legis.senado.leg.br) - the real LexML URN Lex resolver for enacted Normas Juridicas (laws, decrees, constitutional amendments). Confirmed live 2026-07-06 (see DISCOVERY.md "v0.2.0 update") - the v0.1.0 release wrongly reported this as unconfirmed because discovery probed the wrong host (www.lexml.gov.br, which 404s); the real service lives on the Senado's own API gateway.
 3. **normas.leg.br** - the full-text companion to (2): a schema.org Legislation tree, one node per Parte/Livro/Titulo/Capitulo/Secao/Artigo, with real article-level text. Confirmed live 2026-07-06 (see DISCOVERY.md "v0.3.0 update") - closes the gap v0.2.0 flagged as unconfirmed.
 4. **DataJud CNJ** (api-publica.datajud.cnj.jus.br) - court DOCKET metadata (not ruling text) across STJ/TST/TSE/TRFs/TJs/TRTs/TREs and military courts. Confirmed live 2026-07-06 (see DISCOVERY.md "v0.4.0 update").
+5. **STJ Open Data Portal** (dadosabertos.web.stj.jus.br) - real acordao (ruling) FULL TEXT + ementa (headnote) from the Superior Tribunal de Justica, Brazil's second-highest court. Confirmed live 2026-07-07 (see DISCOVERY.md "v0.5.0 update"). Coverage starts May 2022 - there is no public full-text API for older STJ decisions.
+6. **CARF** (acordaos.economia.gov.br) - real acordao (tax ruling) full text from Brazil's federal tax appeals board. Confirmed live 2026-07-07 (see DISCOVERY.md "v0.5.0 update"). Only exact docket/decision-number lookup is supported - free-text search is not reliably indexed upstream (see `carf_client.py` docstring), so this server does not offer a fuzzy CARF search tool.
 
 ## Scope
 
@@ -54,26 +73,32 @@ This MCP server exposes four independent, keyless, no-registration Brazilian ope
 - `br_get_norma_texto` returns the real text of one dispositivo (an article and its paragraphs/incisos, concatenated in document order) - not a summary, not a paraphrase.
 - If a bill's `situacao` reads "Transformada em Norma Juridica" ("Transformed into a legal norm"), the bill passed and became law - use `br_get_norma` with the resulting URN Lex (if known) to confirm identification, not `br_get_proposicao`.
 - `br_search_processos` / `br_get_processo` return a court docket's procedural TIMELINE (`movimentos`: distribuicao, conclusao, publicacao, etc.), parties' classe/assuntos, and the deciding `orgaoJulgador` - **not** the prose text of a ruling. DataJud (the source) carries no ementa/acordao full text. Do not present a `movimento` entry as if it were the holding of a decision - it is a docket event label, at most an inferred outcome signal (e.g. "Provimento em Parte").
+- `br_search_case_stj` / `br_get_case_stj` return the real `ementa` (headnote) AND `decisao` (ruling body prose) for STJ acordaos - this DOES carry ruling text, unlike DataJud. Coverage is bounded to the most recent months scanned (see tool docstring) and to May-2022-onwards per the portal's own coverage window - a miss does not mean the case doesn't exist, only that it is outside the scanned window.
+- `br_get_case_carf` returns CARF tax-ruling `ementa` and `decisao_texto` by exact `numero_processo` or `numero_decisao` - there is no `br_search_case_carf` free-text tool because CARF's own full-text index is not reliably populated (confirmed empty on live probing for common terms).
 - **STF is out of scope** - it does not feed DataJud (confirmed: querying it 404s, by design, not outage) and this server has no STF tool. Do not imply STF coverage.
+- **Planalto (planalto.gov.br) is out of scope** - no confirmed mechanical rule maps a URN Lex to a Planalto URL, and `legislacao.presidencia.gov.br` (REFLEGIS) serves a bot-challenge CAPTCHA page to plain HTTP clients (confirmed live 2026-07-07) rather than a structured API. See DISCOVERY.md.
+- **TST (jurisprudencia.tst.jus.br) has no tool here** - a real backend was confirmed live (`jurisprudencia-backend2.tst.jus.br`), but only a document-type-filtered browse/pagination contract could be confirmed, not exact-case or free-text lookup. Per this fleet's citation contract (retrieve a specific, verifiable case), that was not shipped as a tool. See DISCOVERY.md.
 
 ## Call order
 
 - Legislative process: `br_search_proposicoes` (by `sigla_tipo` + `ano`) then `br_get_proposicao` (by `id`).
 - Enacted law identification: `br_get_norma` (by URN Lex, e.g. `urn:lex:br:federal:lei:2002-01-10;10406`). The caller supplies the URN - this tool verifies and enriches it, it does not search by keyword or invent a URN.
 - Enacted law text: `br_get_norma_index` (same URN) to find the `dispositivo` suffix, then `br_get_norma_texto` (URN + suffix) for the article text. Do not skip the index step and guess a suffix - `art5` vs `art5_par1u` (paragraph 1) address different text.
-- Court docket: `br_search_processos` (by `tribunal` + free-text `query`, e.g. classe name or a CNJ process number) then `br_get_processo` (by `tribunal` + exact `numero_processo`) for the full movement timeline.
+- Court docket (metadata only): `br_search_processos` (by `tribunal` + free-text `query`, e.g. classe name or a CNJ process number) then `br_get_processo` (by `tribunal` + exact `numero_processo`) for the full movement timeline.
+- STJ ruling text: `br_search_case_stj` (by `orgao` + free text or process number) then `br_get_case_stj` (by `orgao` + exact `numero_processo`) for the full ementa + decisao prose.
+- CARF ruling text: `br_get_case_carf` (by exact `numero_processo` or `numero_decisao`) - no search tool, exact lookup only.
 
 ## Hard constraints
 
-- **No free-text keyword search** on the legislation APIs - proposicoes filter by type/year/number, normas resolve by URN Lex you already have, dispositivos resolve by suffix from `br_get_norma_index`. `br_search_processos` DOES support free text (classe name or process number) - that is DataJud's own query model, not an exception invented here.
+- **No free-text keyword search** on the legislation APIs - proposicoes filter by type/year/number, normas resolve by URN Lex you already have, dispositivos resolve by suffix from `br_get_norma_index`. `br_search_processos` and `br_search_case_stj` DO support free text (classe/relator/ementa terms or a process number) - that is each source's own query model, not an exception invented here. CARF has no free-text tool at all (see Scope above).
 - **Every response has `human_readable_citation` + `source_url`** - cite both to the user.
 - **Audit log JSONL** - every tool call appends to `~/.matematic/audit/br-eli-mcp.jsonl`.
 
 ## Error iteration
 
 Tools return a structured error with a `[code]` prefix:
-- `invalid_arg` - a parameter is missing or out of range (e.g. a URN Lex not matching the `urn:lex:br:...` scheme, or a `tribunal` not in the supported list).
-- `not_found` - no bill/norma/dispositivo/processo exists for that id / URN / suffix / numero_processo.
+- `invalid_arg` - a parameter is missing or out of range (e.g. a URN Lex not matching the `urn:lex:br:...` scheme, or a `tribunal`/`orgao` not in the supported list).
+- `not_found` - no bill/norma/dispositivo/processo/caso exists for that id / URN / suffix / numero_processo.
 - `upstream_error` - an upstream API error (HTTP, timeout). Retry once before surfacing.
 
 ## Response style
@@ -82,6 +107,8 @@ Tools return a structured error with a `[code]` prefix:
 - Cite normas as `human_readable_citation`: the official name/apelido, e.g. "Codigo Civil (2002) (CC)".
 - Cite dispositivos as `human_readable_citation`: the article label, e.g. "Art. 5o".
 - Cite dockets as `human_readable_citation`: "STJ - Processo <numeroProcesso>".
+- Cite STJ rulings as `human_readable_citation`: "STJ, <classe> <numeroProcesso>, Rel. Min. <nome>, j. DD/MM/AAAA".
+- Cite CARF rulings as `human_readable_citation`: "CARF, <turma/camara>, Ac. <numero_decisao>, Rel. <nome>".
 - NEVER invent an id, a number, a year, a URN Lex, or a dispositivo suffix - take each from the tool output or the caller's own input.
 """
 
@@ -124,13 +151,23 @@ def _caselaw_base_url() -> str:
     return os.environ.get("BR_ELI_DATAJUD_BASE_URL", CASELAW_BASE_URL).rstrip("/")
 
 
+def _stj_base_url() -> str:
+    return os.environ.get("BR_ELI_STJ_BASE_URL", STJ_BASE_URL).rstrip("/")
+
+
+def _carf_base_url() -> str:
+    return os.environ.get("BR_ELI_CARF_BASE_URL", CARF_BASE_URL)
+
+
 def _audit() -> AuditLogger:
     return AuditLogger()
 
 
 def _map_upstream(exc: Exception) -> Exception:
     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
-        return ToolError("not_found", "No matching proposicao found in the Camara dos Deputados API.")
+        return ToolError(
+            "not_found", "No matching proposicao found in the Camara dos Deputados API."
+        )
     if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
         return ToolError("upstream_error", f"Camara API error: {type(exc).__name__}: {exc}")
     return exc
@@ -143,7 +180,9 @@ def _map_norma_upstream(exc: Exception) -> Exception:
     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
         return ToolError("not_found", "No matching Norma Juridica found for that URN Lex.")
     if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
-        return ToolError("upstream_error", f"legis.senado.leg.br API error: {type(exc).__name__}: {exc}")
+        return ToolError(
+            "upstream_error", f"legis.senado.leg.br API error: {type(exc).__name__}: {exc}"
+        )
     return exc
 
 
@@ -160,6 +199,24 @@ def _map_caselaw_upstream(exc: Exception) -> Exception:
         return ToolError("not_found", "No matching tribunal index found in DataJud CNJ.")
     if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
         return ToolError("upstream_error", f"DataJud CNJ API error: {type(exc).__name__}: {exc}")
+    return exc
+
+
+def _map_stj_upstream(exc: Exception) -> Exception:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+        return ToolError(
+            "not_found", "No matching dataset/resource found on the STJ Open Data portal."
+        )
+    if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
+        return ToolError("upstream_error", f"STJ Open Data API error: {type(exc).__name__}: {exc}")
+    return exc
+
+
+def _map_carf_upstream(exc: Exception) -> Exception:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+        return ToolError("not_found", "No matching acordao found in the CARF Solr index.")
+    if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
+        return ToolError("upstream_error", f"CARF Solr API error: {type(exc).__name__}: {exc}")
     return exc
 
 
@@ -187,7 +244,9 @@ async def br_search_proposicoes(sigla_tipo: str, ano: int, itens: int = 20) -> d
     """
     audit = _audit()
     if not sigla_tipo or not sigla_tipo.isalpha():
-        raise ToolError("invalid_arg", f"sigla_tipo={sigla_tipo!r} must be a non-empty letters-only code.")
+        raise ToolError(
+            "invalid_arg", f"sigla_tipo={sigla_tipo!r} must be a non-empty letters-only code."
+        )
     if not 1823 <= ano <= 2100:
         raise ToolError("invalid_arg", f"ano={ano} is out of range (1823..2100).")
     input_hash = hash_input({"sigla_tipo": sigla_tipo, "ano": ano, "itens": itens})
@@ -197,14 +256,24 @@ async def br_search_proposicoes(sigla_tipo: str, ano: int, itens: int = 20) -> d
             async with CamaraClient(base_url=_base_url()) as client:
                 raw_items = await client.search_proposicoes(sigla_tipo.upper(), ano, itens)
         except Exception as exc:
-            audit.log(tool="br_search_proposicoes", input_hash=input_hash, output_count_or_size=0,
-                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
-                      error=f"{type(exc).__name__}: {exc}")
+            audit.log(
+                tool="br_search_proposicoes",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise _map_upstream(exc) from exc
 
     items = [_to_dict(parse_proposicao(r)) for r in raw_items]
-    audit.log(tool="br_search_proposicoes", input_hash=input_hash, output_count_or_size=len(items),
-              duration_ms=t.duration_ms, status="ok")
+    audit.log(
+        tool="br_search_proposicoes",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
     return {"total": len(items), "items": items}
 
 
@@ -234,16 +303,26 @@ async def br_get_proposicao(id: int) -> dict:
             async with CamaraClient(base_url=_base_url()) as client:
                 raw = await client.get_proposicao(id)
         except Exception as exc:
-            audit.log(tool="br_get_proposicao", input_hash=input_hash, output_count_or_size=0,
-                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
-                      error=f"{type(exc).__name__}: {exc}")
+            audit.log(
+                tool="br_get_proposicao",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise _map_upstream(exc) from exc
 
     if not raw:
         raise ToolError("not_found", f"No proposicao with id={id}.")
     result = _to_dict(parse_proposicao(raw))
-    audit.log(tool="br_get_proposicao", input_hash=input_hash, output_count_or_size=1,
-              duration_ms=t.duration_ms, status="ok")
+    audit.log(
+        tool="br_get_proposicao",
+        input_hash=input_hash,
+        output_count_or_size=1,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
     return result
 
 
@@ -272,7 +351,9 @@ async def br_get_norma(urn: str) -> dict:
     """
     audit = _audit()
     if not urn.startswith(_URN_PREFIX):
-        raise ToolError("invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme).")
+        raise ToolError(
+            "invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme)."
+        )
     input_hash = hash_input({"urn": urn})
 
     with timer() as t:
@@ -280,9 +361,14 @@ async def br_get_norma(urn: str) -> dict:
             async with NormaClient(base_url=_norma_base_url()) as client:
                 raw = await client.get_norma_by_urn(urn)
         except Exception as exc:
-            audit.log(tool="br_get_norma", input_hash=input_hash, output_count_or_size=0,
-                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
-                      error=f"{type(exc).__name__}: {exc}")
+            audit.log(
+                tool="br_get_norma",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise _map_norma_upstream(exc) from exc
 
     if not raw:
@@ -293,8 +379,13 @@ async def br_get_norma(urn: str) -> dict:
         **dataclasses.asdict(norma),
         **dataclasses.asdict(citation),
     }
-    audit.log(tool="br_get_norma", input_hash=input_hash, output_count_or_size=1,
-              duration_ms=t.duration_ms, status="ok")
+    audit.log(
+        tool="br_get_norma",
+        input_hash=input_hash,
+        output_count_or_size=1,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
     return result
 
 
@@ -320,7 +411,9 @@ async def br_get_norma_index(urn: str) -> dict:
     """
     audit = _audit()
     if not urn.startswith(_URN_PREFIX):
-        raise ToolError("invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme).")
+        raise ToolError(
+            "invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme)."
+        )
     input_hash = hash_input({"urn": urn})
 
     with timer() as t:
@@ -328,17 +421,27 @@ async def br_get_norma_index(urn: str) -> dict:
             async with TextClient(base_url=_text_base_url()) as client:
                 tree = await client.get_legislation_tree(urn)
         except Exception as exc:
-            audit.log(tool="br_get_norma_index", input_hash=input_hash, output_count_or_size=0,
-                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
-                      error=f"{type(exc).__name__}: {exc}")
+            audit.log(
+                tool="br_get_norma_index",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise _map_text_upstream(exc) from exc
 
     if not tree:
         raise ToolError("not_found", f"No Legislation tree found for urn={urn!r}.")
     refs = build_index(tree)
     items = [dataclasses.asdict(r) for r in refs]
-    audit.log(tool="br_get_norma_index", input_hash=input_hash, output_count_or_size=len(items),
-              duration_ms=t.duration_ms, status="ok")
+    audit.log(
+        tool="br_get_norma_index",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
     return {"urn": urn, "total": len(items), "items": items}
 
 
@@ -367,9 +470,13 @@ async def br_get_norma_texto(urn: str, dispositivo: str) -> dict:
     """
     audit = _audit()
     if not urn.startswith(_URN_PREFIX):
-        raise ToolError("invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme).")
+        raise ToolError(
+            "invalid_arg", f"urn={urn!r} must start with {_URN_PREFIX!r} (LexML URN Lex scheme)."
+        )
     if not dispositivo:
-        raise ToolError("invalid_arg", "dispositivo must be a non-empty suffix from br_get_norma_index.")
+        raise ToolError(
+            "invalid_arg", "dispositivo must be a non-empty suffix from br_get_norma_index."
+        )
     input_hash = hash_input({"urn": urn, "dispositivo": dispositivo})
 
     with timer() as t:
@@ -377,9 +484,14 @@ async def br_get_norma_texto(urn: str, dispositivo: str) -> dict:
             async with TextClient(base_url=_text_base_url()) as client:
                 tree = await client.get_legislation_tree(urn)
         except Exception as exc:
-            audit.log(tool="br_get_norma_texto", input_hash=input_hash, output_count_or_size=0,
-                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
-                      error=f"{type(exc).__name__}: {exc}")
+            audit.log(
+                tool="br_get_norma_texto",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise _map_text_upstream(exc) from exc
 
     text = extract_text(tree, dispositivo) if tree else None
@@ -396,8 +508,13 @@ async def br_get_norma_texto(urn: str, dispositivo: str) -> dict:
         "human_readable_citation": name or dispositivo,
         "source_url": f"https://normas.leg.br/?urn={lex_uri}",
     }
-    audit.log(tool="br_get_norma_texto", input_hash=input_hash, output_count_or_size=len(text),
-              duration_ms=t.duration_ms, status="ok")
+    audit.log(
+        tool="br_get_norma_texto",
+        input_hash=input_hash,
+        output_count_or_size=len(text),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
     return result
 
 
@@ -440,9 +557,14 @@ async def br_search_processos(tribunal: str, query: str, limit: int = 20) -> dic
             async with CaselawClient(base_url=_caselaw_base_url()) as client:
                 raw_items = await client.search_processos(tribunal, query, limit)
         except Exception as exc:
-            audit.log(tool="br_search_processos", input_hash=input_hash, output_count_or_size=0,
-                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
-                      error=f"{type(exc).__name__}: {exc}")
+            audit.log(
+                tool="br_search_processos",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise _map_caselaw_upstream(exc) from exc
 
     items = []
@@ -450,8 +572,13 @@ async def br_search_processos(tribunal: str, query: str, limit: int = 20) -> dic
         processo = parse_processo(raw, tribunal)
         citation = build_processo_citation(processo)
         items.append({**dataclasses.asdict(processo), **dataclasses.asdict(citation)})
-    audit.log(tool="br_search_processos", input_hash=input_hash, output_count_or_size=len(items),
-              duration_ms=t.duration_ms, status="ok")
+    audit.log(
+        tool="br_search_processos",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
     return {"total": len(items), "items": items}
 
 
@@ -489,9 +616,14 @@ async def br_get_processo(tribunal: str, numero_processo: str) -> dict:
             async with CaselawClient(base_url=_caselaw_base_url()) as client:
                 raw = await client.get_processo(tribunal, numero_processo)
         except Exception as exc:
-            audit.log(tool="br_get_processo", input_hash=input_hash, output_count_or_size=0,
-                      duration_ms=t.duration_ms if t.duration_ms else 0, status="error",
-                      error=f"{type(exc).__name__}: {exc}")
+            audit.log(
+                tool="br_get_processo",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             raise _map_caselaw_upstream(exc) from exc
 
     if not raw:
@@ -502,8 +634,210 @@ async def br_get_processo(tribunal: str, numero_processo: str) -> dict:
     processo = parse_processo(raw, tribunal)
     citation = build_processo_citation(processo)
     result = {**dataclasses.asdict(processo), **dataclasses.asdict(citation)}
-    audit.log(tool="br_get_processo", input_hash=input_hash, output_count_or_size=1,
-              duration_ms=t.duration_ms, status="ok")
+    audit.log(
+        tool="br_get_processo",
+        input_hash=input_hash,
+        output_count_or_size=1,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# br_search_case_stj
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_search_case_stj(orgao: str, query: str, limit: int = 20) -> dict:
+    """Search STJ (Superior Tribunal de Justica) acordaos - real ruling text.
+
+    Unlike `br_search_processos` (DataJud, metadata only), this returns the
+    actual `ementa` (headnote) and `decisao` (ruling body prose) from the
+    STJ Open Data Portal. Scans the most recent monthly bulk files for one
+    orgao julgador (chamber/section) - a miss means "not in the scanned
+    window", not "does not exist". Coverage starts May 2022.
+
+    Args:
+        orgao: deciding chamber/section, one of the keys in the supported
+            list, e.g. ``"CORTE ESPECIAL"``, ``"TERCEIRA TURMA"``.
+        query: free text - a process/registration number (6+ digits) matches
+            exactly; anything else matches `ministroRelator` or `ementa`
+            (case-insensitive substring).
+        limit: max results (default 20).
+
+    Returns:
+        ``{"total": int, "items": [...]}`` - each item carries the citation contract.
+    """
+    audit = _audit()
+    orgao_norm = (orgao or "").strip().upper()
+    if orgao_norm not in ORGAO_DATASET:
+        raise ToolError(
+            "invalid_arg",
+            f"orgao={orgao!r} is not supported. Known: {sorted(ORGAO_DATASET)}.",
+        )
+    if not query:
+        raise ToolError("invalid_arg", "query must be a non-empty string.")
+    input_hash = hash_input({"orgao": orgao_norm, "query": query, "limit": limit})
+
+    with timer() as t:
+        try:
+            async with StjClient(base_url=_stj_base_url()) as client:
+                raw_items = await client.search_casos(orgao_norm, query, limit)
+        except Exception as exc:
+            audit.log(
+                tool="br_search_case_stj",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_stj_upstream(exc) from exc
+
+    items = []
+    for raw in raw_items:
+        caso = parse_caso_stj(raw, orgao_norm)
+        citation = build_caso_stj_citation(caso)
+        items.append({**dataclasses.asdict(caso), **dataclasses.asdict(citation)})
+    audit.log(
+        tool="br_search_case_stj",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return {"total": len(items), "items": items}
+
+
+# ---------------------------------------------------------------------------
+# br_get_case_stj
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_get_case_stj(orgao: str, numero_processo: str) -> dict:
+    """Fetch one STJ acordao by its exact numeroProcesso, with real ruling text.
+
+    Args:
+        orgao: deciding chamber/section, e.g. ``"CORTE ESPECIAL"``.
+        numero_processo: the STJ process or registration number (digits;
+            punctuation ignored).
+
+    Returns:
+        A dict with ``ementa``, ``decisao`` (full ruling prose),
+        ``ministro_relator``, ``data_decisao``, ``human_readable_citation``,
+        ``source_url``.
+    """
+    audit = _audit()
+    orgao_norm = (orgao or "").strip().upper()
+    if orgao_norm not in ORGAO_DATASET:
+        raise ToolError(
+            "invalid_arg",
+            f"orgao={orgao!r} is not supported. Known: {sorted(ORGAO_DATASET)}.",
+        )
+    if not numero_processo:
+        raise ToolError("invalid_arg", "numero_processo must be a non-empty string.")
+    input_hash = hash_input({"orgao": orgao_norm, "numero_processo": numero_processo})
+
+    with timer() as t:
+        try:
+            async with StjClient(base_url=_stj_base_url()) as client:
+                raw = await client.get_caso(orgao_norm, numero_processo)
+        except Exception as exc:
+            audit.log(
+                tool="br_get_case_stj",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_stj_upstream(exc) from exc
+
+    if not raw:
+        raise ToolError(
+            "not_found",
+            f"No STJ acordao found for orgao={orgao_norm!r}, numero_processo={numero_processo!r} "
+            "in the scanned recent months.",
+        )
+    caso = parse_caso_stj(raw, orgao_norm)
+    citation = build_caso_stj_citation(caso)
+    result = {**dataclasses.asdict(caso), **dataclasses.asdict(citation)}
+    audit.log(
+        tool="br_get_case_stj",
+        input_hash=input_hash,
+        output_count_or_size=1,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# br_get_case_carf
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def br_get_case_carf(
+    numero_processo: str | None = None, numero_decisao: str | None = None
+) -> dict:
+    """Fetch one CARF (tax appeals) acordao by exact docket or decision number.
+
+    Exactly one of `numero_processo` / `numero_decisao` must be given - this
+    is an exact lookup, not a search. There is no free-text search tool for
+    CARF because its full-text index is not reliably populated upstream
+    (confirmed empty on live probing for common Portuguese terms).
+
+    Args:
+        numero_processo: CARF docket number, e.g. ``"16095.000602/2007-70"``.
+        numero_decisao: CARF decision number, e.g. ``"9101-002.402"``.
+
+    Returns:
+        A dict with ``ementa``, ``decisao_texto`` (full ruling prose),
+        ``relator``, ``turma``/``camara``/``secao``, ``data_publicacao``,
+        ``human_readable_citation``, ``source_url``.
+    """
+    audit = _audit()
+    if not numero_processo and not numero_decisao:
+        raise ToolError("invalid_arg", "Provide numero_processo or numero_decisao.")
+    input_hash = hash_input({"numero_processo": numero_processo, "numero_decisao": numero_decisao})
+
+    with timer() as t:
+        try:
+            async with CarfClient(base_url=_carf_base_url()) as client:
+                raw = await client.get_acordao(
+                    numero_processo=numero_processo, numero_decisao=numero_decisao
+                )
+        except Exception as exc:
+            audit.log(
+                tool="br_get_case_carf",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_carf_upstream(exc) from exc
+
+    if not raw:
+        raise ToolError(
+            "not_found",
+            f"No CARF acordao found for numero_processo={numero_processo!r}, "
+            f"numero_decisao={numero_decisao!r}.",
+        )
+    caso = parse_caso_carf(raw)
+    citation = build_caso_carf_citation(caso)
+    result = {**dataclasses.asdict(caso), **dataclasses.asdict(citation)}
+    audit.log(
+        tool="br_get_case_carf",
+        input_hash=input_hash,
+        output_count_or_size=1,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
     return result
 
 
