@@ -20,6 +20,7 @@ import httpx
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from . import runtime
 from .audit import AuditLogger, hash_input, timer
 from .carf_client import DEFAULT_BASE_URL as CARF_BASE_URL
 from .carf_client import CarfClient
@@ -143,35 +144,35 @@ mcp: FastMCP = FastMCP(name="br-eli-mcp", instructions=INSTRUCTIONS)
 
 
 def _base_url() -> str:
-    return os.environ.get("BR_ELI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+    return os.environ.get("BR_ELI_BASE_URL", runtime.base_url("eli", DEFAULT_BASE_URL)).rstrip("/")
 
 
 def _norma_base_url() -> str:
-    return os.environ.get("BR_ELI_NORMA_BASE_URL", NORMA_BASE_URL).rstrip("/")
+    return os.environ.get("BR_ELI_NORMA_BASE_URL", runtime.base_url("eli_norma", NORMA_BASE_URL)).rstrip("/")
 
 
 def _text_base_url() -> str:
-    return os.environ.get("BR_ELI_TEXT_BASE_URL", TEXT_BASE_URL).rstrip("/")
+    return os.environ.get("BR_ELI_TEXT_BASE_URL", runtime.base_url("eli_text", TEXT_BASE_URL)).rstrip("/")
 
 
 def _caselaw_base_url() -> str:
-    return os.environ.get("BR_ELI_DATAJUD_BASE_URL", CASELAW_BASE_URL).rstrip("/")
+    return os.environ.get("BR_ELI_DATAJUD_BASE_URL", runtime.base_url("eli_datajud", CASELAW_BASE_URL)).rstrip("/")
 
 
 def _stj_base_url() -> str:
-    return os.environ.get("BR_ELI_STJ_BASE_URL", STJ_BASE_URL).rstrip("/")
+    return os.environ.get("BR_ELI_STJ_BASE_URL", runtime.base_url("eli_stj", STJ_BASE_URL)).rstrip("/")
 
 
 def _carf_base_url() -> str:
-    return os.environ.get("BR_ELI_CARF_BASE_URL", CARF_BASE_URL)
+    return os.environ.get("BR_ELI_CARF_BASE_URL", runtime.base_url("eli_carf", CARF_BASE_URL))
 
 
 def _tst_base_url() -> str:
-    return os.environ.get("BR_ELI_TST_BASE_URL", TST_BASE_URL).rstrip("/")
+    return os.environ.get("BR_ELI_TST_BASE_URL", runtime.base_url("eli_tst", TST_BASE_URL)).rstrip("/")
 
 
 def _tcu_base_url() -> str:
-    return os.environ.get("BR_ELI_TCU_BASE_URL", TCU_BASE_URL).rstrip("/")
+    return os.environ.get("BR_ELI_TCU_BASE_URL", runtime.base_url("eli_tcu", TCU_BASE_URL)).rstrip("/")
 
 
 def _audit() -> AuditLogger:
