@@ -100,6 +100,26 @@ API URI (not a URN Lex - a bill isn't enacted law yet). For `br_get_norma`,
 pip install br-eli-mcp
 ```
 
+
+### Windows 11 ze Smart App Control
+
+Smart App Control blokuje niepodpisane pliki wykonywalne, a `uvx.exe`, `pip.exe`
+i generowany przy instalacji `br-eli-mcp.exe` podpisane nie sa. `python.exe`
+z python.org jest podpisany przez Python Software Foundation, wiec uruchomienie
+przez modul omija blokade:
+
+```bash
+python -m pip install br-eli-mcp
+python -m br_eli_mcp
+```
+
+```json
+{ "mcpServers": { "br-eli-mcp": { "command": "python", "args": ["-m", "br_eli_mcp"] } } }
+```
+
+Nie wylaczaj Smart App Control, zeby to obejsc - wylaczenia nie da sie cofnac
+bez ponownej instalacji systemu.
+
 ## Configuration
 
 | Env var | Default |
