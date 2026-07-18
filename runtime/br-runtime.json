@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "generated_note": "Volatile runtime config for br-eli-mcp. Edit + re-run the release workflow to repoint endpoints or bump the citation grammar WITHOUT a PyPI release. Consumed lazily on first tool call; falls back to the hardcoded defaults in the client modules if unavailable (offline-safe).",
+  "base_urls": {
+    "eli": "https://dadosabertos.camara.leg.br/api/v2",
+    "eli_norma": "https://legis.senado.leg.br/dadosabertos",
+    "eli_text": "https://normas.leg.br/api/public",
+    "eli_datajud": "https://api-publica.datajud.cnj.jus.br",
+    "eli_stj": "https://dadosabertos.web.stj.jus.br",
+    "eli_carf": "https://acordaos.economia.gov.br/solr/acordaos2/select",
+    "eli_tst": "https://jurisprudencia-backend2.tst.jus.br",
+    "eli_tcu": "https://pesquisa.apps.tcu.gov.br/rest/publico/base/acordao-completo"
+  },
+  "citation_grammar_version": "br-eli/2026.07"
+}
