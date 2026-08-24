@@ -78,6 +78,7 @@ for the exact probes run and each confirmed request/response contract.
 | `br_get_case_tst` | Fetch one TST ruling by exact CNJ unified process number - ementa + inteiro teor |
 | `br_search_case_tcu` | Search TCU (Federal Court of Accounts) acordaos by free text (525K acordaos) |
 | `br_get_case_tcu` | Fetch one TCU acordao by (numero, ano, colegiado) - deliberation + report + vote text |
+| `br_coverage` | Declare what this connector covers, when each family was captured, and - explicitly - what it does NOT cover. Every gap carries a fallback. |
 
 Bill type codes (`sigla_tipo`), for reference:
 
