@@ -97,6 +97,7 @@ This MCP server exposes eight independent, keyless, no-registration Brazilian op
 
 ## Hard constraints
 
+- **Do not answer past the edge of this corpus** - when a search comes back empty, or the question touches material this connector does not carry, call `br_coverage` and relay what it says is missing. Absence here is not absence in the law.
 - **No free-text keyword search** on the legislation APIs - proposicoes filter by type/year/number, normas resolve by URN Lex you already have, dispositivos resolve by suffix from `br_get_norma_index`. `br_search_processos`, `br_search_case_stj`, `br_search_case_tst` and `br_search_case_tcu` DO support free text - that is each source's own query model, not an exception invented here. CARF has no free-text tool at all (see Scope above).
 - **Every response has `human_readable_citation` + `source_url`** - cite both to the user.
 - **Audit log JSONL** - every tool call appends to `~/.matematic/audit/br-eli-mcp.jsonl`.
