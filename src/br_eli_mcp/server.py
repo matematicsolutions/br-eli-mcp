@@ -77,7 +77,7 @@ This MCP server exposes eight independent, keyless, no-registration Brazilian op
 - If a bill's `situacao` reads "Transformada em Norma Juridica" ("Transformed into a legal norm"), the bill passed and became law - use `br_get_norma` with the resulting URN Lex (if known) to confirm identification, not `br_get_proposicao`.
 - `br_search_processos` / `br_get_processo` return a court docket's procedural TIMELINE (`movimentos`: distribuicao, conclusao, publicacao, etc.), parties' classe/assuntos, and the deciding `orgaoJulgador` - **not** the prose text of a ruling. DataJud (the source) carries no ementa/acordao full text. Do not present a `movimento` entry as if it were the holding of a decision - it is a docket event label, at most an inferred outcome signal (e.g. "Provimento em Parte").
 - `br_search_case_stj` / `br_get_case_stj` return the real `ementa` (headnote) AND `decisao` (ruling body prose) for STJ acordaos - this DOES carry ruling text, unlike DataJud. Coverage is bounded to the most recent months scanned (see tool docstring) and to May-2022-onwards per the portal's own coverage window - a miss does not mean the case doesn't exist, only that it is outside the scanned window.
-- `br_get_case_carf` returns CARF tax-ruling `ementa` and `decisao_texto` by exact `numero_processo` or `numero_decisao` - there is no `br_search_case_carf` free-text tool because CARF's own full-text index is not reliably populated (confirmed empty on live probing for common terms).
+- `br_get_case_carf` returns CARF tax-ruling `ementa` and `decisao_texto` by exact `numero_processo` or `numero_decisao` - there is no CARF free-text tool because CARF's own full-text index is not reliably populated (confirmed empty on live probing for common terms).
 - `br_search_case_tst` / `br_get_case_tst` return the real `ementa` AND `inteiro_teor` (full ruling prose) for TST rulings. Search is free text ("contendo as palavras" - quote an expression for exact-phrase); get is by exact CNJ unified process number (NNNNNNN-DD.AAAA.5.TR.OOOO - the fifth segment is 5 for the labor courts). Both confirmed live 2026-07-07.
 - `br_search_case_tcu` returns TCU acordao summaries (sumario) with the index's own total; `br_get_case_tcu` returns the real `acordao_texto` (deliberation), `relatorio` (rapporteur's report) and `voto` (vote) prose for one acordao by (numero, ano, colegiado). A numero/ano pair without colegiado can match up to one acordao per deciding body (Plenário / Primeira Câmara / Segunda Câmara) - the tool then errors and lists the matches instead of guessing.
 - **STF is out of scope** - it does not feed DataJud (confirmed: querying it 404s, by design, not outage) and this server has no STF tool. Do not imply STF coverage.
@@ -1078,7 +1078,20 @@ async def br_coverage() -> Coverage:
     Returns:
         ``Coverage`` with families, an as-of note, and a non-empty list of known gaps.
     """
-    return build_coverage()
+    audit = _audit()
+    input_hash = hash_input({})
+
+    with timer() as t:
+        coverage = build_coverage()
+
+    audit.log(
+        tool="br_coverage",
+        input_hash=input_hash,
+        output_count_or_size=len(coverage.known_gaps),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return coverage
 
 
 # ---------------------------------------------------------------------------
