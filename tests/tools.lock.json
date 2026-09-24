@@ -1,0 +1,718 @@
+{
+  "package_version": "0.8.3",
+  "tools": {
+    "br_coverage": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Declare what this connector covers, how it is sourced, and what it does NOT cover.\n\nCall this before telling a user that the law \"does not contain\" something, and whenever\na search comes back empty: the absence may be a gap in this connector rather than in the\nlaw. Every gap carries a fallback saying where to look instead.\n\nReturns:\n    ``Coverage`` with families, an as-of note, and a non-empty list of known gaps.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_coverage",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "What this connector covers, how it is sourced, and what it does not cover.",
+          "properties": {
+            "as_of_note": {
+              "description": "States what the dates mean, and what they do not promise.",
+              "type": "string"
+            },
+            "families": {
+              "items": {
+                "additionalProperties": true,
+                "description": "One data family this connector exposes.",
+                "properties": {
+                  "captured_at": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Date this family was last captured (ISO). None when queried live."
+                  },
+                  "live": {
+                    "default": true,
+                    "description": "True when queried live instead of from a snapshot.",
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "description": "Data family, e.g. 'Federal legislation'.",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Official source the data comes from.",
+                    "type": "string"
+                  },
+                  "tool": {
+                    "description": "Tool or tools that reach this family.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "tool",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "known_gaps": {
+              "description": "Never empty. An empty list would mean 'not checked', not 'no gaps'.",
+              "items": {
+                "additionalProperties": true,
+                "description": "A known, named hole in this connector's coverage - plus the way around it.",
+                "properties": {
+                  "fallback": {
+                    "description": "Where to go instead.",
+                    "type": "string"
+                  },
+                  "family": {
+                    "description": "Which family the gap belongs to.",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Stable gap identifier.",
+                    "type": "string"
+                  },
+                  "missing": {
+                    "description": "What is NOT available through this connector.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "family",
+                  "missing",
+                  "fallback"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "status": {
+              "default": "ok",
+              "enum": [
+                "ok",
+                "degraded",
+                "failed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "as_of_note"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "cb80a68d5e9175bcc5017ad4d97e7a98412b9567a28eb31cdde7fdbaae0100f5"
+    },
+    "br_get_case_carf": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch one CARF (tax appeals) acordao by exact docket or decision number.\n\nExactly one of `numero_processo` / `numero_decisao` must be given - this\nis an exact lookup, not a search. There is no free-text search tool for\nCARF because its full-text index is not reliably populated upstream\n(confirmed empty on live probing for common Portuguese terms).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "numero_decisao": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "CARF decision number, e.g. ``\"9101-002.402\"``."
+            },
+            "numero_processo": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "CARF docket number, e.g. ``\"16095.000602/2007-70\"``."
+            }
+          },
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_case_carf",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "7c5e9bac78fde55eee0fb2171e2aecbf262d2ad57d43173447bc4b43d8d38a42"
+    },
+    "br_get_case_stj": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch one STJ acordao by its exact numeroProcesso, with real ruling text.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "numero_processo": {
+              "description": "the STJ process or registration number (digits;\npunctuation ignored).",
+              "type": "string"
+            },
+            "orgao": {
+              "description": "deciding chamber/section, e.g. ``\"CORTE ESPECIAL\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "orgao",
+            "numero_processo"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_case_stj",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "d2c8a515f639994f5761b4cf7aa002c30f7f9e00c9190d9e3ba4211b19862412"
+    },
+    "br_get_case_tcu": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch one TCU acordao with the real ruling text: `acordao_texto`\n(deliberation), `relatorio` (rapporteur's report) and `voto` (vote).\n\nA TCU acordao is uniquely identified by (numero, ano, colegiado) - the\nsame numero/ano recurs across the Plenario and the two Camaras. When\n`colegiado` is omitted and more than one acordao matches, this errors\nand lists the matching bodies instead of guessing.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "ano": {
+              "description": "four-digit year, e.g. ``\"2026\"``.",
+              "type": "string"
+            },
+            "colegiado": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "deciding body - ``\"Plenário\"``, ``\"Primeira Câmara\"`` or\n``\"Segunda Câmara\"`` (accent-sensitive, as spelled in the index)."
+            },
+            "numero": {
+              "description": "acordao number, e.g. ``\"1771\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "numero",
+            "ano"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_case_tcu",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "14ae882bd8c82a6d80222a71520d6525da6053d23a9a1b30d88a6f5ca8b0496c"
+    },
+    "br_get_case_tst": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch one TST ruling by its exact CNJ unified process number - real\nruling text (`ementa` + `inteiro_teor`).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "numero_processo": {
+              "description": "CNJ unified process number, formatted\n(``\"21036-38.2019.5.04.0021\"``) or as the raw 20 digits. The\nfifth segment is 5 (Justica do Trabalho) for every TST case.",
+              "type": "string"
+            },
+            "tipo": {
+              "default": "ACORDAO",
+              "description": "document type (default ``\"ACORDAO\"``).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "numero_processo"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_case_tst",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "c396625d34e4b04b15084ecee7db48054ad2d692b02ae8219b77ac55f0ec2da9"
+    },
+    "br_get_norma": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Resolve a Brazilian Norma Juridica (enacted law/decree/amendment) by its URN Lex.\n\nIdentification + Diario Oficial da Uniao publication provenance + amendment\nhistory + any STF unconstitutionality notes - NOT the full compiled article\ntext (no confirmed URL rule to Planalto; see DISCOVERY.md).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "urn": {
+              "description": "a URN Lex, e.g. ``\"urn:lex:br:federal:lei:2002-01-10;10406\"``\n(Codigo Civil). Must start with ``\"urn:lex:br:\"`` - never invent one,\ntake it from the user or from another tool's output.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "urn"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_norma",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "647d092e88f15dc743742c7d2b45dfef54fb0fcab3bb71c5da754ee2dde20fc2"
+    },
+    "br_get_norma_index": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List the addressable structure of a Norma Juridica: parts, books, titles,\nchapters, sections, and articles, in document order.\n\nUse this to find the `dispositivo` suffix for the article you need (e.g.\n`\"art5\"`), then pass it to `br_get_norma_texto` - do not guess a suffix.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "urn": {
+              "description": "a URN Lex, e.g. ``\"urn:lex:br:federal:lei:2002-01-10;10406\"``\n(Codigo Civil). Must start with ``\"urn:lex:br:\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "urn"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_norma_index",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "4e89846b661543d3dec1c63a2f2fc5545c45d148dee45a9a4b339f62c9a1cfed"
+    },
+    "br_get_norma_texto": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch the real text of one dispositivo (article, or a titulo/capitulo\nheader) of a Norma Juridica.\n\nAn article's text includes its caput and every paragraph/inciso/alinea\nbeneath it, concatenated in document order - not a summary.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "dispositivo": {
+              "description": "a suffix from `br_get_norma_index`, e.g. ``\"art5\"``.\nNever guess one - a wrong suffix returns `not_found`, it does not\nsilently fall back to a different article.",
+              "type": "string"
+            },
+            "urn": {
+              "description": "a URN Lex, e.g. ``\"urn:lex:br:federal:lei:2002-01-10;10406\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "urn",
+            "dispositivo"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_norma_texto",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "dcf4c52923e22e1cb238855790ef0bfae5587a7ec659facf7d87a85a69d8a1a0"
+    },
+    "br_get_processo": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch one court docket by its exact CNJ unified process number.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "numero_processo": {
+              "description": "the CNJ unified process number (digits, punctuation\nignored), e.g. ``\"5000035-87.2010.8.21.0057\"``.",
+              "type": "string"
+            },
+            "tribunal": {
+              "description": "one of the supported tribunal codes, e.g. ``\"STJ\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "tribunal",
+            "numero_processo"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_processo",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "41f12e2c8ec9f0449b07fc6313fbcb159d271c870a1e7553519112f539c9ac75"
+    },
+    "br_get_proposicao": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch full detail (including current status) for one bill by its numeric id.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "the Camara dos Deputados proposicao id (from ``br_search_proposicoes``).",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_get_proposicao",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "39d178b9b8c13db2e80f6896dc79c5934b744bb445c9bf683ebe5246cfda7a13"
+    },
+    "br_search_case_stj": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search STJ (Superior Tribunal de Justica) acordaos - real ruling text.\n\nUnlike `br_search_processos` (DataJud, metadata only), this returns the\nactual `ementa` (headnote) and `decisao` (ruling body prose) from the\nSTJ Open Data Portal. Scans the most recent monthly bulk files for one\norgao julgador (chamber/section) - a miss means \"not in the scanned\nwindow\", not \"does not exist\". Coverage starts May 2022.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 20,
+              "description": "max results (default 20).",
+              "type": "integer"
+            },
+            "orgao": {
+              "description": "deciding chamber/section, one of the keys in the supported\nlist, e.g. ``\"CORTE ESPECIAL\"``, ``\"TERCEIRA TURMA\"``.",
+              "type": "string"
+            },
+            "query": {
+              "description": "free text - a process/registration number (6+ digits) matches\nexactly; anything else matches `ministroRelator` or `ementa`\n(case-insensitive substring).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "orgao",
+            "query"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_search_case_stj",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "1f2bb7b39e207ab78c2ce64a2d90baf01a21a2eb472e3a9f14be6172f6ee3f10"
+    },
+    "br_search_case_tcu": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search TCU (Federal Court of Accounts) acordaos - public-procurement\nand public-spending jurisprudence.\n\nReturns summaries (`sumario`) plus the index's own total. Use\n`br_get_case_tcu` for the full ruling text of one acordao. The query\nsupports the portal's own field-scoped syntax in addition to plain\nwords, e.g. ``NUMACORDAO:1771 ANOACORDAO:2026``.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 20,
+              "description": "max results (default 20).",
+              "type": "integer"
+            },
+            "query": {
+              "description": "free text or field-scoped query.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_search_case_tcu",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "05a040b2c960ad0f723c52e73bb0d25385824bb471e18f650d0465586b3bf678"
+    },
+    "br_search_case_tst": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search TST (labor supreme court) rulings by free text - real ruling text.\n\nThe query goes into the TST frontend's own \"contendo as palavras\" (AND)\nfield - quote an expression for an exact-phrase match, e.g.\n``\"adicional de insalubridade\"``. Returns the index's own total plus a\npage of records carrying the real `ementa` and `inteiro_teor` prose.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 20,
+              "description": "max results per page (default 20).",
+              "type": "integer"
+            },
+            "query": {
+              "description": "free text (AND semantics; quotes for exact phrase).",
+              "type": "string"
+            },
+            "tipo": {
+              "default": "ACORDAO",
+              "description": "document type - ``\"ACORDAO\"`` (default), ``\"DESPACHO\"``,\n``\"SUM\"`` (sumulas), ``\"OJ\"`` (orientacoes jurisprudenciais),\n``\"PN\"``, ``\"DESPGP\"``, ``\"DESPGVP\"``, ``\"DESPGCG\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_search_case_tst",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "58b0996c4db7fcea60740d514e7ad915eefd7d305ce776a46f50461a03c1bd95"
+    },
+    "br_search_processos": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search court dockets (procedural metadata, NOT ruling text) in one\ntribunal's DataJud CNJ index.\n\nDataJud carries classe/assuntos/orgaoJulgador and the full procedural\ntimeline (`movimentos`) for each docket - it does not carry the prose\ntext of a ruling/acordao/ementa. STF is not covered (see server docstring).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "default": 20,
+              "description": "max results (default 20).",
+              "type": "integer"
+            },
+            "query": {
+              "description": "free text - a CNJ process number (15+ digits) matches\n`numeroProcesso` exactly; anything else matches `classe.nome`.",
+              "type": "string"
+            },
+            "tribunal": {
+              "description": "one of the supported tribunal codes, e.g. ``\"STJ\"``,\n``\"TST\"``, ``\"TRF1\"``, ``\"TJSP\"``, ``\"TRT2\"``, ``\"TRE-SP\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "tribunal",
+            "query"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_search_processos",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "3692502cc1ad5d4d0753711a1fe708dee8bdc00dbe45ffa17cdc0820a20e3702"
+    },
+    "br_search_proposicoes": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "List Brazilian federal bills (proposicoes) of a given type and year.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "ano": {
+              "description": "year, e.g. ``2024``.",
+              "type": "integer"
+            },
+            "itens": {
+              "default": 20,
+              "description": "max results (default 20, API caps around 100).",
+              "type": "integer"
+            },
+            "sigla_tipo": {
+              "description": "bill type code, e.g. ``\"PL\"`` (Projeto de Lei), ``\"PLP\"``, ``\"PEC\"``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sigla_tipo",
+            "ano"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "br_search_proposicoes",
+        "outputSchema": {
+          "additionalProperties": true,
+          "type": "object"
+        }
+      },
+      "sha256": "52d7e07ca6bf1cb0a0e1e858d1570573e02c21eef1551235d1353d6d7d999a10"
+    }
+  },
+  "toolset_sha256": "8693d8cf47d8d807afc4fc830af7fa82d54dfed3cddf08173d675fcf538bac7c"
+}
