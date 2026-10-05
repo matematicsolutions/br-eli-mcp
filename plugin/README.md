@@ -1,9 +1,11 @@
 # br-eli-mcp - Claude plugin
 
 Brazilian federal law with verifiable citations, as a Claude plugin. It runs the
-[br-eli-mcp](https://github.com/matematicsolutions/br-eli-mcp) MCP server, pinned to
-version 0.8.3 on PyPI, through `uvx`. Every answer carries the official source and
-identifier, so a citation can be checked instead of trusted.
+[br-eli-mcp](https://github.com/matematicsolutions/br-eli-mcp) MCP server, version 0.8.3
+from PyPI. `server/uv.lock` pins that package and every dependency with hashes, and the
+plugin starts it with `uv run --frozen`, so it runs exactly what was reviewed. Every
+answer carries the official source and identifier, so a citation can be checked instead
+of trusted.
 
 What it covers: bills (Camara dos Deputados), legislation by URN Lex with real article
 text (Senado, normas.leg.br), and case law from STJ, TST, TCU and CARF, plus DataJud CNJ
@@ -13,7 +15,7 @@ docket metadata. The full tool list and the source notes are in the
 ## Requirements
 
 Claude Code or the Claude desktop app, and [uv](https://docs.astral.sh/uv/) on your
-machine (`uvx` fetches and runs the pinned package).
+machine (it installs the locked packages on first start and runs the server).
 
 ## Install
 

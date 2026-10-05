@@ -13,8 +13,8 @@
   "keywords": ["legal", "brazil", "law", "case-law", "citations", "mcp"],
   "mcpServers": {
     "br-eli-mcp": {
-      "command": "uvx",
-      "args": ["br-eli-mcp==0.8.3"]
+      "command": "uv",
+      "args": ["run", "--frozen", "--project", "${CLAUDE_PLUGIN_ROOT}/server", "br-eli-mcp"]
     }
   }
 }
