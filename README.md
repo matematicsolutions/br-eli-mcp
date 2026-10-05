@@ -97,6 +97,15 @@ API URI (not a URN Lex - a bill isn't enacted law yet). For `br_get_norma`,
 
 ## Install
 
+As a Claude plugin (Claude Code or the desktop app, needs [uv](https://docs.astral.sh/uv/)):
+
+```
+/plugin marketplace add matematicsolutions/br-eli-mcp
+/plugin install br-eli-mcp@br-eli-mcp
+```
+
+As a plain Python package:
+
 ```bash
 pip install br-eli-mcp
 ```
@@ -138,6 +147,23 @@ without reinstalling Windows.
 | `BR_ELI_CARF_BASE_URL` | `https://acordaos.economia.gov.br/solr/acordaos2/select` |
 | `BR_ELI_TST_BASE_URL` | `https://jurisprudencia-backend2.tst.jus.br` |
 | `BR_ELI_TCU_BASE_URL` | `https://pesquisa.apps.tcu.gov.br/rest/publico/base/acordao-completo` |
+
+## Data
+
+The server runs on your machine. Each tool call sends your query to the official
+Brazilian public API it names above (Camara, Senado, normas.leg.br, DataJud CNJ, STJ,
+TST, TCU or CARF) and to nothing else; nothing goes to MateMatic. Your query and the
+results also pass through whatever model you use, the same way as any other message.
+
+Two things are written locally, in your home directory:
+
+- a response cache (`~/.matematic/cache/br-eli`), so a repeated lookup does not hit
+  the source again. Court rulings are public records and can name the parties.
+- an audit log (`~/.matematic/audit/br-eli-mcp.jsonl`), one line per tool call: the
+  tool name, a SHA-256 hash of the input (not the input itself), result size, time
+  and status.
+
+Delete either folder at any time; `BR_ELI_CACHE_DIR` and `BR_ELI_AUDIT_DIR` move them.
 
 ## License
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-plugin-marketplace.json",
+  "name": "br-eli-mcp",
+  "description": "One plugin: Brazilian federal law and case law with verifiable citations.",
+  "owner": {
+    "name": "Wieslaw Mazur / MateMatic Solutions",
+    "url": "https://matematicsolutions.com"
+  },
+  "plugins": [
+    {
+      "name": "br-eli-mcp",
+      "description": "Brazilian federal legislation (URN Lex, real article text) and case law (STJ, TST, TCU, CARF, DataJud) with official source identifiers.",
+      "version": "0.8.3",
+      "author": { "name": "Wieslaw Mazur / MateMatic Solutions" },
+      "license": "Apache-2.0",
+      "source": "./"
+    }
+  ]
+}
