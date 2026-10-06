@@ -31,6 +31,11 @@ Brazilian public API it names (Camara, Senado, normas.leg.br, DataJud CNJ, STJ, 
 TCU or CARF) and to nothing else; nothing goes to MateMatic. Your query and the results
 also pass through whatever model you use, the same way as any other message.
 
+The standalone server can fetch a small configuration file (updated source addresses) from
+this repository's GitHub Releases on first use. The plugin turns that off
+(`BR_ELI_RUNTIME_URL` set to empty in `plugin.json`), so it runs only the reviewed code with
+its built-in source addresses and makes no request other than the tool calls above.
+
 Two things are written locally, in your home directory:
 
 - a response cache (`~/.matematic/cache/br-eli`), so a repeated lookup does not hit

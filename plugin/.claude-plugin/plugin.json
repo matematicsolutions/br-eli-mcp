@@ -14,7 +14,8 @@
   "mcpServers": {
     "br-eli-mcp": {
       "command": "uv",
-      "args": ["run", "--frozen", "--project", "${CLAUDE_PLUGIN_ROOT}/server", "br-eli-mcp"]
+      "args": ["run", "--frozen", "--project", "${CLAUDE_PLUGIN_ROOT}/server", "br-eli-mcp"],
+      "env": { "BR_ELI_RUNTIME_URL": "" }
     }
   }
 }
