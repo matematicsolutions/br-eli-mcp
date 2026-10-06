@@ -152,8 +152,14 @@ without reinstalling Windows.
 
 The server runs on your machine. Each tool call sends your query to the official
 Brazilian public API it names above (Camara, Senado, normas.leg.br, DataJud CNJ, STJ,
-TST, TCU or CARF) and to nothing else; nothing goes to MateMatic. Your query and the
-results also pass through whatever model you use, the same way as any other message.
+TST, TCU or CARF); nothing goes to MateMatic. Your query and the results also pass
+through whatever model you use, the same way as any other message.
+
+Once, on first use, the standalone server also fetches a small configuration file
+(`br-runtime.json.gz`, updated source addresses) from this repository's GitHub Releases.
+That request carries no query content; GitHub's download counter for the file is the only
+usage signal we see. `BR_ELI_RUNTIME_URL=""` turns it off, and the Claude plugin ships
+with it off.
 
 Two things are written locally, in your home directory:
 
