@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/matematicsolutions-br-eli-mcp-badge.png)](https://mseep.ai/app/matematicsolutions-br-eli-mcp)
+
 # br-eli-mcp
 
 <!-- mcp-name: io.github.matematicsolutions/br-eli-mcp -->
